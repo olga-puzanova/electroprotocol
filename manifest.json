@@ -1,0 +1,14 @@
+{
+  "name": "ЭлектроПротокол",
+  "short_name": "ЭлектроПротокол",
+  "description": "Заявки, инструктажи и протоколы испытаний электрооборудования",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f4f7",
+  "theme_color": "#16324f",
+  "lang": "ru",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
