@@ -610,7 +610,100 @@ input[type="search"] {
   gap: 10px;
 }
 
+/* Заявка: несколько испытаний, исполнители, действия */
+.tests {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 14px;
+  color: var(--ink);
+}
+.tests li {
+  margin-bottom: 2px;
+}
+.multi {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.multi select,
+.multi input {
+  flex: 1;
+  min-width: 0;
+}
+.x {
+  flex: none;
+  width: 46px;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--bad);
+  font-size: 22px;
+  cursor: pointer;
+}
+.btn.small {
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.btn.danger {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 14px;
+}
+.actions .wide {
+  grid-column: 1 / -1;
+}
+.mt {
+  margin-top: 12px;
+}
+.st-not {
+  background: #eceff3;
+  color: #4a5562;
+}
+.subtabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-bottom: 12px;
+  padding-bottom: 2px;
+}
+.subtabs a {
+  white-space: nowrap;
+  padding: 8px 12px;
+  border-radius: 20px;
+  background: #fff;
+  border: 1px solid var(--line);
+  text-decoration: none;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.subtabs a.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.proto-head {
+  border-left: 4px solid var(--brand);
+}
+.proto-head h2,
+.proto-head h3 {
+  margin: 4px 0;
+}
+.proto-block + .proto-block {
+  margin-top: 24px;
+}
+
 @media print {
+  .proto-block {
+    break-before: page;
+  }
+  .proto-block:first-of-type {
+    break-before: auto;
+  }
   .top,
   .no-print,
   .sticky-actions,
@@ -629,4 +722,36 @@ input[type="search"] {
     padding: 0 0 12px;
     break-inside: avoid;
   }
+}
+
+/* Кнопка ± перед числом */
+.inp-wrap.has-sign {
+  display: flex;
+  gap: 6px;
+}
+.inp-wrap.has-sign input {
+  flex: 1;
+  min-width: 0;
+}
+.sign {
+  flex: 0 0 48px;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 700;
+}
+.inp-wrap.has-sign .unit {
+  right: 12px;
+}
+/* Справка без оценки */
+.msg.info {
+  color: var(--muted);
+}
+.txt-warn {
+  color: var(--warn);
+}
+.wbtn {
+  margin-bottom: 4px;
 }

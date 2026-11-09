@@ -40,10 +40,23 @@ const hasMegger = items => items.some(s => /сопротивлени\S* изол
 const CONCLUSION = {
   title: 'Заключение',
   fields: [
-    { id: 'conclusion', label: 'Вывод', type: 'select', required: true,
-      options: ['Годен к эксплуатации', 'Не годен, требуется ремонт'] },
-    { id: 'notes', label: 'Замечания', type: 'textarea' },
-    { id: 'executor', label: 'Испытания провёл (ФИО)', type: 'text', required: true }
+    { id: 'conclusion', label: 'Данная электроустановка', type: 'select', required: true,
+      options: ['Годна к эксплуатации', 'Не годна к эксплуатации'] },
+    { id: 'notes', label: 'Замечания', type: 'textarea' }
+  ]
+};
+// Годна ли установка по заключению (понимает и старые формулировки)
+const isFit = v => !!v.conclusion && !/не\s*год/i.test(v.conclusion);
+// Номер, дата и погода — в начале каждого протокола
+const PROTO_SECTION = {
+  title: 'Протокол',
+  fields: [
+    { id: 'proto_no', label: 'Номер протокола', type: 'text', required: true },
+    { id: 'proto_date', label: 'Дата испытаний', type: 'date' },
+    { type: 'weather' },
+    { id: 'temp_air', label: 'Температура воздуха', type: 'number', unit: '°C', signed: true },
+    { id: 'humidity', label: 'Влажность воздуха', type: 'number', unit: '%' },
+    { id: 'pressure', label: 'Атмосферное давление', type: 'number', unit: 'мм рт. ст.' }
   ]
 };
 
@@ -307,12 +320,20 @@ function num(v) {
 }
 const fmt = (x, d = 2) => x.toFixed(d).replace('.', ',');
 const OK_OPTIONS = ['Соответствует норме', 'Не соответствует норме', 'Не проводилось'];
+const NOT_DONE = 'Не проводилось';
+// Разница между фазами по формуле: (большее − меньшее) / среднее из них × 100
+const phaseDiff = xs => { const mx = Math.max(...xs), mn = Math.min(...xs); return (mx - mn) / ((mx + mn) / 2) * 100; };
+const RESULT = ['Выдержала', 'Не выдержала', 'Не проводилось'];
+const resultCheck = (r, id, val) => {
+  if (val === 'Не выдержала') r[id] = { ok: false, msg: 'испытание не выдержано' };
+  if (val === 'Выдержала') r[id] = { ok: true, msg: 'испытание пройдено' };
+};
 
-// Универсальный пункт испытаний: результат + оценка
+// Универсальный пункт испытаний: результат + оценка (пустая оценка при отправке станет «Не проводилось»)
 function genericItem(i, name) {
   return { title: `${i}. ${name}`, fields: [
     { id: `res_${i}`, label: 'Результат (значения, прибор)', type: 'textarea' },
-    { id: `ok_${i}`, label: 'Оценка', type: 'select', required: true, options: OK_OPTIONS }
+    { id: `ok_${i}`, label: 'Оценка', type: 'select', options: OK_OPTIONS }
   ]};
 }
 // Проверка оценок «соответствует / не соответствует»
@@ -362,14 +383,14 @@ const TRANSFORMER = {
   ],
   form: [
     { title: 'Паспортные данные и условия', fields: [
-      { id: 'tr_type', label: 'Тип трансформатора', type: 'text', required: true, ph: 'ТМГ-400/10' },
+      { id: 'tr_type', label: 'Тип трансформатора', type: 'text', required: true },
       { id: 'serial', label: 'Заводской номер', type: 'text' },
       { id: 'power', label: 'Мощность', type: 'number', unit: 'кВА' },
-      { id: 'voltage', label: 'Напряжение ВН/НН', type: 'text', ph: '10/0,4', unit: 'кВ' },
+      { id: 'voltage', label: 'Напряжение ВН/НН', type: 'text', unit: 'кВ' },
       { id: 'scheme', label: 'Схема и группа соединения', type: 'select', options: ['Y/Yн-0', 'Д/Yн-11', 'Y/Д-11', 'Y/Zн-11'] },
-      { id: 'temp', label: 'Температура верхних слоёв масла', type: 'number', unit: '°C', required: true,
+      { id: 'temp', label: 'Температура верхних слоёв масла', type: 'number', unit: '°C', signed: true,
         hint: 'От температуры зависит норма сопротивления изоляции.' },
-      { id: 'devices', label: 'Приборы', type: 'text', ph: 'Мегаомметр …, зав. № …', hint: 'Тип, заводской номер, дата поверки.' }
+      { id: 'devices', label: 'Приборы', type: 'text', hint: 'Тип, заводской номер, дата поверки.' }
     ]},
     genericItem(1, T_ITEMS[0]),
     { title: `2. ${T_ITEMS[1]}`,
@@ -377,12 +398,12 @@ const TRANSFORMER = {
       fields: [
       { type: 'row', label: 'ВН — (НН + бак), МОм', fields: [
         { id: 'r15_hv', label: 'R15', type: 'number' },
-        { id: 'r60_hv', label: 'R60', type: 'number', required: true }
+        { id: 'r60_hv', label: 'R60', type: 'number' }
       ]},
       { type: 'calc', id: 'kabs_hv', label: 'Коэффициент абсорбции ВН' },
       { type: 'row', label: 'НН — (ВН + бак), МОм', fields: [
         { id: 'r15_lv', label: 'R15', type: 'number' },
-        { id: 'r60_lv', label: 'R60', type: 'number', required: true }
+        { id: 'r60_lv', label: 'R60', type: 'number' }
       ]},
       { type: 'calc', id: 'kabs_lv', label: 'Коэффициент абсорбции НН' }
     ]},
@@ -392,7 +413,7 @@ const TRANSFORMER = {
       { id: 'hv_test', label: 'Результат', type: 'select', options: ['Выдержала', 'Не выдержала', 'Не проводилось'] }
     ]},
     { title: `4. ${T_ITEMS[3]}`,
-      note: 'Обмотку ВН измерять на каждом положении переключателя. Значения разных фаз не должны различаться более чем на 2 %.',
+      note: 'Обмотку ВН измерять на каждом положении переключателя. Разница фаз = (большее − меньшее) ÷ среднее из них × 100 %, не более 2 %.',
       fields: [
       { id: 'taps_n', label: 'Сколько положений переключателя (ВН)', type: 'select', rerender: true,
         options: Array.from({ length: 27 }, (_, i) => String(i + 1)),
@@ -413,7 +434,7 @@ const TRANSFORMER = {
       { type: 'calc', id: 'rdc_lv', label: 'Разница между фазами НН' }
     ]},
     { title: `5. ${T_ITEMS[4]}`, note: 'Отклонение от паспортного значения — не более 2 %.', fields: [
-      { id: 'tap', label: 'Положение переключателя', type: 'text', ph: 'III (номинальное)' },
+      { id: 'tap', label: 'Положение переключателя', type: 'text' },
       { id: 'kt_pass', label: 'Паспортный коэффициент', type: 'number', hint: 'Для 10/0,4 кВ — 25.' },
       { type: 'row', label: 'Измеренный коэффициент', fields: [
         { id: 'kt_ab', label: 'AB/ab', type: 'number' },
@@ -422,7 +443,7 @@ const TRANSFORMER = {
       ]}
     ]},
     { title: `6. ${T_ITEMS[5]}`, fields: [
-      { id: 'group', label: 'Результат проверки', type: 'select', required: true,
+      { id: 'group', label: 'Результат проверки', type: 'select',
         options: ['Соответствует паспорту', 'Не соответствует паспорту'] }
     ]},
     ...[7, 8, 9, 10, 11, 12].map(i => genericItem(i, T_ITEMS[i - 1])),
@@ -453,8 +474,8 @@ const TRANSFORMER = {
     for (const [id, keys] of groups) {
       const xs = keys.map(k => num(v[k]));
       if (xs.every(x => x !== null && x > 0)) {
-        const d = (Math.max(...xs) - Math.min(...xs)) / Math.min(...xs) * 100;
-        r[id] = { value: fmt(d, 1) + ' %', ok: d <= 2, msg: d <= 2 ? 'норма ≤ 2 %' : 'больше 2 % — проверить контакты, переключатель' };
+        const d = phaseDiff(xs);
+        r[id] = { value: fmt(d, 2) + ' %', ok: d <= 2, msg: d <= 2 ? 'норма ≤ 2 %' : 'больше 2 % — проверить контакты, переключатель' };
       }
     }
     const kp = num(v.kt_pass);
@@ -499,8 +520,7 @@ const GROUNDING = {
       { id: 'r_norm', label: 'Сеть (норма по ПУЭ п. 1.7.101)', type: 'select', required: true,
         options: [{ v: '2', t: '660/380 В — не более 2 Ом' }, { v: '4', t: '380/220 В — не более 4 Ом' }, { v: '8', t: '220/127 В — не более 8 Ом' }] },
       { id: 'soil', label: 'Состояние грунта', type: 'select', options: ['Сухой', 'Влажный', 'Промёрзший'] },
-      { id: 'temp_air', label: 'Температура воздуха', type: 'number', unit: '°C' },
-      { id: 'devices', label: 'Прибор', type: 'text', ph: 'Измеритель …, зав. № …', hint: 'Тип, заводской номер, дата поверки.' }
+      { id: 'devices', label: 'Прибор', type: 'text', hint: 'Тип, заводской номер, дата поверки.' }
     ]},
     { title: `1. ${G_ITEMS[0]}`, fields: [
       { id: 'visual', label: 'Состояние проводников и швов', type: 'select', options: ['Удовлетворительное', 'Есть коррозия или обрывы'] }
@@ -512,7 +532,7 @@ const GROUNDING = {
     genericItem(3, G_ITEMS[2]),
     genericItem(4, G_ITEMS[3]),
     { title: `5. ${G_ITEMS[4]}`, fields: [
-      { id: 'r_ground', label: 'Измеренное сопротивление', type: 'number', unit: 'Ом', required: true },
+      { id: 'r_ground', label: 'Измеренное сопротивление', type: 'number', unit: 'Ом' },
       { id: 'k_season', label: 'Сезонный коэффициент', type: 'number',
         hint: 'Если грунт влажный — обычно 1,2–2. Если не нужен, оставьте пустым.' },
       { type: 'calc', id: 'r_calc', label: 'Сопротивление с учётом сезона' }
@@ -536,6 +556,337 @@ const GROUNDING = {
   }
 };
 
+// Помощник: строка из трёх фаз
+const phaseRow = (label, pre, unit) => ({ type: 'row', label: `${label}, ${unit}`, fields: [
+  { id: `${pre}_a`, label: 'A', type: 'number' }, { id: `${pre}_b`, label: 'B', type: 'number' }, { id: `${pre}_c`, label: 'C', type: 'number' }
+]});
+const phases = (v, pre) => ['a', 'b', 'c'].map(p => num(v[`${pre}_${p}`]));
+const info = (value, msg) => ({ value, ok: null, msg });
+
+// ===================== 1.8.40 СИЛОВЫЕ КАБЕЛЬНЫЕ ЛИНИИ (подробный бланк) =====================
+const C_ITEMS = PUE.find(p => p[0] === '1.8.40')[2];
+// Табл. 1.8.39: испытательное выпрямленное напряжение, кВ, по номинальному напряжению кабеля
+const CABLE_HV = {
+  'Бумажная': { 2: 12, 3: 18, 6: 36, 10: 60, 20: 100, 35: 175 },
+  'Пластмассовая': { 1: 5, 3: 15, 6: 36, 10: 60 },
+  'Резиновая': { 3: 6, 6: 12, 10: 20 }
+};
+// Табл. 1.8.40: ток утечки (мА) и коэффициент асимметрии при испытательном напряжении
+const CABLE_LEAK = { 6: [36, 0.2, 8], 10: [60, 0.5, 8], 20: [100, 1.5, 10], 35: [175, 2.5, 10] };
+function cableNorm(v) {
+  const u = num(v.cab_u), ins = v.cab_ins;
+  if (u === null || !ins) return null;
+  if (ins === 'Сшитый полиэтилен (СПЭ)') return { xlpe: true };
+  const hv = CABLE_HV[ins]?.[u] ?? null;
+  const minutes = ins === 'Резиновая' ? 5 : 10;
+  return { u, ins, hv, minutes, leak: ins === 'Резиновая' ? null : CABLE_LEAK[u] };
+}
+const CABLE = {
+  code: '1.8.40',
+  short: 'Силовые кабельные линии',
+  title: 'Испытание силовой кабельной линии',
+  docs: 'ПУЭ п. 1.8.40, табл. 1.8.39, 1.8.40; РД 34.45-51.300-97, разд. 29',
+  briefing: [...HV_BRIEFING, ...MEGGER_BRIEFING,
+    'Перед испытанием убедиться, что на другом конце кабеля выставлен наблюдающий или установлено ограждение и плакат «Испытание. Опасно для жизни».'],
+  steps: [
+    { title: 'Подготовка', text: 'Отключить кабель с обеих сторон, проверить отсутствие напряжения, наложить заземление. На другом конце выставить наблюдающего.' },
+    { title: 'Целостность и фазировка', text: 'Проверить целостность жил и совпадение фаз на обоих концах.' },
+    { title: 'Изоляция до испытания', text: 'Мегаомметром 2500 В измерить сопротивление изоляции каждой жилы относительно остальных, соединённых с землёй.' },
+    { title: 'Испытание выпрямленным напряжением', text: 'Поднять напряжение ступенями, записать ток утечки на ступенях 15 и 35 кВ и при испытательном напряжении. Ток утечки должен уменьшаться. Время — 10 мин (резиновая изоляция — 5 мин).' },
+    { title: 'Изоляция после испытания', text: 'Разрядить жилу и повторно измерить сопротивление изоляции.' },
+    { title: 'Кабели из сшитого полиэтилена', text: 'Нормы и способ испытания — по инструкции завода-изготовителя (в ПУЭ 7 их нет).' },
+    { title: 'Завершение', text: 'Разрядить и заземлить жилы, снять ограждения, заполнить протокол.' }
+  ],
+  form: [
+    { title: 'Кабель и условия', fields: [
+      { id: 'cab_mark', label: 'Марка кабеля', type: 'text', required: true },
+      { type: 'row', label: 'Сечение и жилы', fields: [
+        { id: 'cab_section', label: 'Сечение, мм²', type: 'number' },
+        { id: 'cab_cores', label: 'Количество жил', type: 'select', options: ['1', '2', '3', '4', '5'] }
+      ]},
+      { id: 'cab_len', label: 'Длина линии', type: 'number', unit: 'м' },
+      { id: 'cab_u', label: 'Номинальное напряжение', type: 'select',
+        options: [{ v: '1', t: 'до 1 кВ' }, { v: '2', t: '2 кВ' }, { v: '3', t: '3 кВ' }, { v: '6', t: '6 кВ' }, { v: '10', t: '10 кВ' }, { v: '20', t: '20 кВ' }, { v: '35', t: '35 кВ' }] },
+      { id: 'cab_ins', label: 'Тип изоляции', type: 'select',
+        options: ['Бумажная', 'Пластмассовая', 'Резиновая', 'Сшитый полиэтилен (СПЭ)'] },
+      { type: 'calc', id: 'cab_norm', label: 'Нормы для этого кабеля' },
+      { id: 'devices', label: 'Приборы', type: 'text', hint: 'Тип, заводской номер, дата поверки.' }
+    ]},
+    { title: `1. ${C_ITEMS[0]}`, fields: [
+      { id: 'phasing', label: 'Результат', type: 'select', options: ['Жилы целы, фазировка верна', 'Обрыв жилы или ошибка фазировки', NOT_DONE] }
+    ]},
+    { title: `2. ${C_ITEMS[1]}`,
+      note: 'Мегаомметр 2500 В. До 1 кВ — не менее 0,5 МОм. Выше 1 кВ не нормируется. Измерять до и после испытания повышенным напряжением.',
+      fields: [
+        phaseRow('До высоковольтных испытаний', 'ri_bef', 'МОм'),
+        phaseRow('После высоковольтных испытаний', 'ri_aft', 'МОм')
+      ]},
+    { title: `3. ${C_ITEMS[2]}`,
+      note: 'Ток утечки при испытании должен уменьшаться. Его абсолютное значение не браковочное, а коэффициент асимметрии (наибольший ток ÷ наименьший) — нормируется.',
+      fields: [
+        { id: 'hv_u', label: 'Испытательное напряжение', type: 'number', unit: 'кВ' },
+        { id: 'hv_t', label: 'Время испытания', type: 'number', unit: 'мин' },
+        phaseRow('Ток утечки при 15 кВ', 'il15', 'мА'),
+        { type: 'calc', id: 'asym15', label: 'Коэффициент асимметрии при 15 кВ' },
+        phaseRow('Ток утечки при 35 кВ', 'il35', 'мА'),
+        { type: 'calc', id: 'asym35', label: 'Коэффициент асимметрии при 35 кВ' },
+        phaseRow('Ток утечки при испытательном напряжении', 'ilt', 'мА'),
+        { type: 'calc', id: 'asymt', label: 'Коэффициент асимметрии при испытательном напряжении' },
+        { id: 'hv_res', label: 'Результат', type: 'select', options: RESULT }
+      ]},
+    ...C_ITEMS.slice(3).map((name, i) => genericItem(i + 4, name)),
+    CONCLUSION
+  ],
+  check(v) {
+    const r = genericChecks(v);
+    const n = cableNorm(v);
+    if (n?.xlpe) r.cab_norm = info('по инструкции завода', 'для СПЭ в ПУЭ 7 норм нет — сверьтесь с паспортом кабеля');
+    else if (n) {
+      const parts = [];
+      if (n.hv) parts.push(`${n.hv} кВ, ${n.minutes} мин`);
+      if (n.leak) parts.push(`асимметрия ≤ ${n.leak[2]}`);
+      r.cab_norm = n.hv
+        ? info(parts.join('; '), n.u === 1 ? 'для кабелей до 1 кВ испытание повышенным напряжением в объём не входит' : 'по табл. 1.8.39 и 1.8.40')
+        : info('—', n.u === 1 ? 'до 1 кВ: изоляция ≥ 0,5 МОм, ВВ испытание не входит в объём' : 'для этого сочетания нормы в ПУЭ нет');
+    }
+    // Изоляция
+    const low = num(v.cab_u) === 1;
+    for (const pre of ['ri_bef', 'ri_aft']) for (const p of ['a', 'b', 'c']) {
+      const x = num(v[`${pre}_${p}`]);
+      if (x === null) continue;
+      r[`${pre}_${p}`] = low ? (x >= 0.5 ? { ok: true, msg: 'норма ≥ 0,5 МОм' } : { ok: false, msg: 'ниже 0,5 МОм' }) : { ok: null, msg: 'выше 1 кВ не нормируется' };
+    }
+    // Ток утечки и асимметрия
+    const hvU = num(v.hv_u) ?? n?.hv ?? null;
+    for (const [pre, id, U] of [['il15', 'asym15', 15], ['il35', 'asym35', 35], ['ilt', 'asymt', hvU]]) {
+      const xs = phases(v, pre);
+      if (!xs.every(x => x !== null && x > 0)) continue;
+      const k = Math.max(...xs) / Math.min(...xs);
+      const atTest = n?.leak && U && Math.abs(U - n.leak[0]) / n.leak[0] <= 0.05;
+      if (atTest) {
+        const ok = k <= n.leak[2];
+        r[id] = { value: fmt(k), ok, msg: ok ? `норма ≤ ${n.leak[2]}` : `больше ${n.leak[2]}` };
+        for (const p of ['a', 'b', 'c']) {
+          const x = num(v[`${pre}_${p}`]);
+          r[`${pre}_${p}`] = x <= n.leak[1] ? { ok: true, msg: `≤ ${fmt(n.leak[1], 1)} мА` } : { ok: null, msg: `больше ${fmt(n.leak[1], 1)} мА — не браковочно, следить, чтобы ток уменьшался` };
+        }
+      } else r[id] = info(fmt(k), 'справочно (норма — только при испытательном напряжении)');
+    }
+    resultCheck(r, 'hv_res', v.hv_res);
+    const u = num(v.hv_u);
+    if (u !== null && n?.hv) r.hv_u = u >= n.hv * 0.95 ? { ok: true, msg: `норма ${n.hv} кВ` } : { ok: false, msg: `ниже нормы ${n.hv} кВ` };
+    const tm = num(v.hv_t);
+    if (tm !== null && n?.minutes && n.hv) r.hv_t = tm >= n.minutes ? { ok: true, msg: `норма ${n.minutes} мин` } : { ok: false, msg: `меньше ${n.minutes} мин` };
+    if (v.phasing === 'Обрыв жилы или ошибка фазировки') r.phasing = { ok: false, msg: 'требуется устранить' };
+    if (v.phasing === 'Жилы целы, фазировка верна') r.phasing = { ok: true, msg: 'в норме' };
+    return r;
+  }
+};
+
+// ===================== 1.8.22 ВАКУУМНЫЕ ВЫКЛЮЧАТЕЛИ (подробный бланк) =====================
+// Табл. 1.8.16: испытательное напряжение 50 Гц, кВ
+const INS_KINDS = ['Нормальная керамическая', 'Нормальная органическая', 'Облегчённая керамическая', 'Облегчённая органическая'];
+const BREAKER_HV = { 3: [24, 21.6, 13, 11.7], 6: [32, 28.8, 21, 18.9], 10: [42, 37.8, 32, 28.8], 15: [55, 49.5, 48, 43.2], 20: [65, 58.5], 35: [95, 85.5] };
+const breakerNorm = v => {
+  const row = BREAKER_HV[num(v.vb_u)], i = INS_KINDS.indexOf(v.vb_ins);
+  return row && i >= 0 ? row[i] ?? null : null;
+};
+const VACUUM = {
+  code: '1.8.22',
+  short: 'Вакуумные выключатели',
+  title: 'Испытание вакуумного выключателя',
+  docs: 'ПУЭ п. 1.8.22, табл. 1.8.16; РД 34.45-51.300-97; инструкция завода-изготовителя',
+  briefing: [...HV_BRIEFING, ...MEGGER_BRIEFING,
+    'Привод выключателя отключить от источника питания и разрядить пружины перед работой с подвижными частями.'],
+  steps: [
+    { title: 'Подготовка', text: 'Выкатить или отключить выключатель, проверить отсутствие напряжения, заземлить. Записать тип, номер, номинальное напряжение.' },
+    { title: 'Сопротивление изоляции', text: 'Мегаомметром 2500 В — главная цепь по фазам; мегаомметром 500–1000 В — вторичные цепи и обмотки электромагнитов.' },
+    { title: 'Переходное сопротивление контактов', text: 'Микроомметром измерить сопротивление главной цепи каждого полюса во включённом положении. Сравнить с паспортом.' },
+    { title: 'Испытание опорной изоляции', text: 'Выключатель включён, напряжение 50 Гц — на каждую фазу относительно земли. Значение — по табл. 1.8.16, 1 минута.' },
+    { title: 'Испытание на разрыв', text: 'Выключатель отключён, напряжение — между контактами каждой дугогасительной камеры. Значение — по инструкции завода.' },
+    { title: 'Минимальное напряжение срабатывания', text: 'Электромагнит включения должен срабатывать при 0,85 Uном и ниже, отключения — при 0,7 Uном и ниже.' },
+    { title: 'Многократные опробования', text: '3–5 операций включения и отключения и 2–3 цикла В-О без выдержки времени.' },
+    { title: 'Завершение', text: 'Снять заземления, вернуть выключатель в рабочее положение, заполнить протокол.' }
+  ],
+  form: [
+    { title: 'Выключатель и условия', fields: [
+      { id: 'vb_type', label: 'Тип выключателя', type: 'text', required: true },
+      { id: 'serial', label: 'Заводской номер', type: 'text' },
+      { id: 'vb_u', label: 'Номинальное напряжение', type: 'select',
+        options: ['3', '6', '10', '15', '20', '35'].map(x => ({ v: x, t: x + ' кВ' })) },
+      { id: 'vb_ins', label: 'Вид изоляции (для нормы испытания)', type: 'select', options: INS_KINDS },
+      { type: 'calc', id: 'vb_norm', label: 'Испытательное напряжение по табл. 1.8.16' },
+      { id: 'drive_u', label: 'Номинальное напряжение привода', type: 'number', unit: 'В' },
+      { id: 'devices', label: 'Приборы', type: 'text', hint: 'Тип, заводской номер, дата поверки.' }
+    ]},
+    { title: '1. Измерение сопротивления изоляции',
+      note: 'Главная цепь — мегаомметр 2500 В. Вторичные цепи и обмотки электромагнитов — не менее 1 МОм (ПУЭ п. 1.8.37).',
+      fields: [
+        phaseRow('Главная цепь', 'ri', 'МОм'),
+        { id: 'ri_sec', label: 'Вторичные цепи и обмотки электромагнитов', type: 'number', unit: 'МОм' }
+      ]},
+    { title: '2. Измерение переходного сопротивления контактов',
+      note: 'Микроомметр, выключатель включён. Норма — по паспорту выключателя.',
+      fields: [
+        { id: 'rc_norm', label: 'Норма по паспорту, не более', type: 'number', unit: 'мкОм' },
+        phaseRow('Измерено', 'rc', 'мкОм')
+      ]},
+    { title: '3. Высоковольтное испытание опорной изоляции', note: 'Напряжение 50 Гц, 1 минута, выключатель включён.', fields: [
+      { id: 'hv_sup_u', label: 'Испытательное напряжение', type: 'number', unit: 'кВ' },
+      { id: 'hv_sup_res', label: 'Результат', type: 'select', options: RESULT }
+    ]},
+    { title: '4. Высоковольтное испытание на разрыв (межконтактный промежуток)', note: 'Выключатель отключён. Напряжение — по инструкции завода, 1 минута.', fields: [
+      { id: 'hv_gap_u', label: 'Испытательное напряжение', type: 'number', unit: 'кВ' },
+      { id: 'hv_gap_res', label: 'Результат', type: 'select', options: RESULT }
+    ]},
+    { title: '5. Испытание изоляции вторичных цепей', note: 'Напряжение 1 кВ, 1 минута.', fields: [
+      { id: 'hv_sec_res', label: 'Результат', type: 'select', options: RESULT }
+    ]},
+    { title: `6. ${PUE.find(p => p[0] === '1.8.22')[2][2]}`,
+      note: 'Включение — при 0,85 Uном и ниже, отключение — при 0,7 Uном и ниже.',
+      fields: [
+        { id: 'u_on', label: 'Напряжение срабатывания на включение', type: 'number', unit: 'В' },
+        { id: 'u_off', label: 'Напряжение срабатывания на отключение', type: 'number', unit: 'В' }
+      ]},
+    { title: `7. ${PUE.find(p => p[0] === '1.8.22')[2][3]}`, note: 'Норма: 3–5 операций включения-отключения и 2–3 цикла В-О.', fields: [
+      { id: 'ops_n', label: 'Операций включения-отключения', type: 'number', unit: 'шт.' },
+      { id: 'cycles_n', label: 'Циклов В-О', type: 'number', unit: 'шт.' },
+      { id: 'ops_res', label: 'Результат', type: 'select', options: ['Без отказов', 'Были отказы', NOT_DONE] }
+    ]},
+    genericItem(8, 'Временные характеристики, ход подвижных частей, одновременность замыкания контактов (по инструкции завода)'),
+    CONCLUSION
+  ],
+  check(v) {
+    const r = genericChecks(v);
+    const hv = breakerNorm(v);
+    if (num(v.vb_u) !== null && v.vb_ins) r.vb_norm = hv ? info(fmt(hv, 1) + ' кВ, 1 мин', 'опорная изоляция') : info('—', 'для этого вида изоляции нормы в таблице нет');
+    for (const p of ['a', 'b', 'c']) {
+      const x = num(v[`ri_${p}`]);
+      if (x !== null) r[`ri_${p}`] = { ok: null, msg: 'сравнить с паспортом и прошлым замером' };
+    }
+    const sec = num(v.ri_sec);
+    if (sec !== null) r.ri_sec = sec >= 1 ? { ok: true, msg: 'норма ≥ 1 МОм' } : { ok: false, msg: 'ниже 1 МОм' };
+    const rn = num(v.rc_norm);
+    for (const p of ['a', 'b', 'c']) {
+      const x = num(v[`rc_${p}`]);
+      if (x !== null && rn) r[`rc_${p}`] = x <= rn ? { ok: true, msg: `норма ≤ ${rn} мкОм` } : { ok: false, msg: `больше ${rn} мкОм` };
+    }
+    const su = num(v.hv_sup_u);
+    if (su !== null && hv) r.hv_sup_u = su >= hv * 0.95 ? { ok: true, msg: `норма ${fmt(hv, 1)} кВ` } : { ok: false, msg: `ниже нормы ${fmt(hv, 1)} кВ` };
+    resultCheck(r, 'hv_sup_res', v.hv_sup_res);
+    resultCheck(r, 'hv_gap_res', v.hv_gap_res);
+    resultCheck(r, 'hv_sec_res', v.hv_sec_res);
+    const ud = num(v.drive_u);
+    if (ud) {
+      const on = num(v.u_on), off = num(v.u_off);
+      if (on !== null) r.u_on = on <= 0.85 * ud ? { ok: true, msg: `норма ≤ ${fmt(0.85 * ud, 0)} В` } : { ok: false, msg: `выше 0,85 Uном (${fmt(0.85 * ud, 0)} В)` };
+      if (off !== null) r.u_off = off <= 0.7 * ud ? { ok: true, msg: `норма ≤ ${fmt(0.7 * ud, 0)} В` } : { ok: false, msg: `выше 0,7 Uном (${fmt(0.7 * ud, 0)} В)` };
+    }
+    const ops = num(v.ops_n), cyc = num(v.cycles_n);
+    if (ops !== null) r.ops_n = ops >= 3 ? { ok: true, msg: 'норма 3–5' } : { ok: false, msg: 'меньше 3 операций' };
+    if (cyc !== null) r.cycles_n = cyc >= 2 ? { ok: true, msg: 'норма 2–3' } : { ok: false, msg: 'меньше 2 циклов' };
+    if (v.ops_res === 'Были отказы') r.ops_res = { ok: false, msg: 'выключатель отказал' };
+    if (v.ops_res === 'Без отказов') r.ops_res = { ok: true, msg: 'в норме' };
+    return r;
+  }
+};
+
+// ===================== 1.8.30 КОНДЕНСАТОРЫ (подробный бланк, несколько штук) =====================
+const K_ITEMS = PUE.find(p => p[0] === '1.8.30')[2];
+const CAP_PURPOSE = [
+  { v: 'krm_lo', t: 'Компенсация реактивной мощности, ниже 1 кВ' },
+  { v: 'krm_hi', t: 'Компенсация реактивной мощности, от 1 кВ' },
+  { v: 'link', t: 'Связи, отбора мощности, делительные' },
+  { v: 'surge', t: 'Защиты от перенапряжений' },
+  { v: 'series', t: 'Продольной компенсации' }
+];
+// Какие пункты ПУЭ входят в объём по назначению конденсатора
+const CAP_SCOPE = { krm_lo: '1, 4, 5', krm_hi: '1, 2, 4, 5', link: '1, 2, 3, 4', surge: '1, 2, 4, 5', series: '1, 2, 4, 5' };
+// Испытательное напряжение для КРМ по номинальному, кВ
+const CAP_HV = { '0,22': 2.1, '0,38': 2.1, '0,5': 2.1, '1,05': 4.3, '3,15': 15.8, '6,3': 22.3, '10,5': 30 };
+const CAPACITORS = {
+  code: '1.8.30',
+  short: 'Конденсаторы',
+  title: 'Испытание конденсаторов',
+  docs: 'ПУЭ п. 1.8.30, табл. 1.8.27; РД 34.45-51.300-97',
+  briefing: [...HV_BRIEFING, ...MEGGER_BRIEFING,
+    'Перед прикосновением к выводам каждый конденсатор разрядить штангой и закоротить выводы — на нём долго держится заряд.'],
+  steps: [
+    { title: 'Подготовка', text: 'Отключить батарею, выждать время саморазряда, разрядить каждый конденсатор штангой, заземлить.' },
+    { title: 'Осмотр', text: 'Проверить, нет ли вздутия корпусов, течи пропитки, сколов изоляторов.' },
+    { title: 'Сопротивление изоляции', text: 'Мегаомметр 2500 В, между соединёнными выводами и корпусом.' },
+    { title: 'Ёмкость', text: 'Измерить ёмкость каждого конденсатора при 15–35 °C. Отклонение от паспорта — не более ±5 % (продольная компенсация: +5 / −10 %).' },
+    { title: 'Испытание повышенным напряжением', text: 'Напряжение — по ПУЭ п. 1.8.30 для номинального напряжения, 1 минута.' },
+    { title: 'Трёхкратное включение батареи', text: 'Включить батарею на номинальное напряжение 3 раза, измерить токи фаз. Разница — не более 5 %.' },
+    { title: 'Завершение', text: 'Разрядить конденсаторы, снять заземления, заполнить протокол.' }
+  ],
+  form: [
+    { title: 'Батарея и условия', fields: [
+      { id: 'cap_purpose', label: 'Назначение конденсаторов', type: 'select', options: CAP_PURPOSE },
+      { id: 'cap_u', label: 'Номинальное напряжение', type: 'select',
+        options: Object.keys(CAP_HV).map(x => ({ v: x, t: x + ' кВ' })) },
+      { type: 'calc', id: 'cap_scope', label: 'Объём испытаний по ПУЭ' },
+      { id: 'devices', label: 'Приборы', type: 'text', hint: 'Тип, заводской номер, дата поверки.' }
+    ]},
+    { title: 'Конденсаторы: 1. Сопротивление изоляции и 2. Ёмкость',
+      note: 'Сопротивление изоляции — мегаомметр 2500 В. Ёмкость — при 15–35 °C, отклонение от паспорта не более ±5 %.',
+      fields: [
+        { id: 'caps_n', label: 'Сколько конденсаторов', type: 'select', rerender: true,
+          options: Array.from({ length: 30 }, (_, i) => String(i + 1)) },
+        { type: 'repeat', count: 'caps_n', make: k => [
+          { type: 'row', label: `Конденсатор ${k}`, fields: [
+            { id: `cap_type_${k}`, label: 'Тип', type: 'text' },
+            { id: `cap_no_${k}`, label: '№', type: 'text' }
+          ]},
+          { type: 'row', label: `Конденсатор ${k}`, fields: [
+            { id: `cap_cp_${k}`, label: 'C паспорт, мкФ', type: 'number' },
+            { id: `cap_cm_${k}`, label: 'C измер., мкФ', type: 'number' },
+            { id: `cap_r_${k}`, label: 'R изол., МОм', type: 'number' }
+          ]},
+          { type: 'calc', id: `cap_d_${k}`, label: `Отклонение ёмкости, конденсатор ${k}` }
+        ]}
+      ]},
+    { title: `3. ${K_ITEMS[2]}`, note: 'Для конденсаторов связи, отбора мощности и делительных. Норма — не более 0,3 % при 20 °C.', fields: [
+      { id: 'tg_d', label: 'tg δ', type: 'number', unit: '%' }
+    ]},
+    { title: `4. ${K_ITEMS[3]}`, note: 'Время — 1 минута. Можно заменить выпрямленным напряжением удвоенного значения.', fields: [
+      { id: 'cap_hv_u', label: 'Испытательное напряжение', type: 'number', unit: 'кВ' },
+      { id: 'cap_hv_res', label: 'Результат', type: 'select', options: RESULT }
+    ]},
+    { title: `5. ${K_ITEMS[4]}`, note: 'Токи в фазах должны различаться не более чем на 5 %.', fields: [
+      phaseRow('Токи фаз', 'cap_i', 'А'),
+      { type: 'calc', id: 'cap_idiff', label: 'Разница токов фаз' }
+    ]},
+    CONCLUSION
+  ],
+  check(v) {
+    const r = genericChecks(v);
+    if (v.cap_purpose) r.cap_scope = info('пункты ' + CAP_SCOPE[v.cap_purpose], 'по ПУЭ п. 1.8.30');
+    const series = v.cap_purpose === 'series';
+    const cnt = Math.max(1, parseInt(v.caps_n) || 1);
+    for (let k = 1; k <= cnt; k++) {
+      const cp = num(v[`cap_cp_${k}`]), cm = num(v[`cap_cm_${k}`]);
+      if (cp && cm !== null) {
+        const d = (cm - cp) / cp * 100;
+        const ok = series ? d <= 5 && d >= -10 : Math.abs(d) <= 5;
+        r[`cap_d_${k}`] = { value: (d > 0 ? '+' : '') + fmt(d, 1) + ' %', ok, msg: ok ? (series ? 'норма +5 / −10 %' : 'норма ±5 %') : 'вне нормы' };
+      }
+      if (num(v[`cap_r_${k}`]) !== null) r[`cap_r_${k}`] = { ok: null, msg: 'ПУЭ значение не нормирует' };
+    }
+    const tg = num(v.tg_d);
+    if (tg !== null) r.tg_d = tg <= 0.3 ? { ok: true, msg: 'норма ≤ 0,3 %' } : { ok: false, msg: 'больше 0,3 %' };
+    const hvN = CAP_HV[v.cap_u], hu = num(v.cap_hv_u);
+    if (hu !== null && hvN && v.cap_purpose?.startsWith('krm')) r.cap_hv_u = hu >= hvN * 0.95 ? { ok: true, msg: `норма ${fmt(hvN, 1)} кВ` } : { ok: false, msg: `ниже нормы ${fmt(hvN, 1)} кВ` };
+    resultCheck(r, 'cap_hv_res', v.cap_hv_res);
+    const xs = phases(v, 'cap_i');
+    if (xs.every(x => x !== null && x > 0)) {
+      const d = phaseDiff(xs);
+      r.cap_idiff = { value: fmt(d, 1) + ' %', ok: d <= 5, msg: d <= 5 ? 'норма ≤ 5 %' : 'больше 5 %' };
+    }
+    return r;
+  }
+};
+
 // ===================== Остальные разделы — универсальный бланк =====================
 function genericType(code, title, items) {
   return {
@@ -547,7 +898,6 @@ function genericType(code, title, items) {
       { title: 'Оборудование и условия', fields: [
         { id: 'eq_type', label: 'Тип оборудования', type: 'text', required: true },
         { id: 'serial', label: 'Заводской номер', type: 'text' },
-        { id: 'temp_air', label: 'Температура воздуха', type: 'number', unit: '°C' },
         { id: 'devices', label: 'Приборы', type: 'text', hint: 'Тип, заводской номер, дата поверки.' }
       ]},
       ...items.map((name, i) => genericItem(i + 1, name)),
@@ -562,6 +912,12 @@ const WORK_TYPES = {};
 for (const [code, title, items] of PUE) {
   if (code === '1.8.16') WORK_TYPES.transformer = TRANSFORMER;
   else if (code === '1.8.39') WORK_TYPES.grounding = GROUNDING;
+  else if (code === '1.8.40') WORK_TYPES.p1_8_40 = CABLE;
+  else if (code === '1.8.22') WORK_TYPES.p1_8_22 = VACUUM;
+  else if (code === '1.8.30') WORK_TYPES.p1_8_30 = CAPACITORS;
   else WORK_TYPES['p' + code.replace(/\./g, '_')] = genericType(code, title, items);
 }
-for (const w of Object.values(WORK_TYPES)) w.potee = [...POTEE_COMMON, ...(POTEE_BY_CODE[w.code] || [])];
+for (const w of Object.values(WORK_TYPES)) {
+  w.potee = [...POTEE_COMMON, ...(POTEE_BY_CODE[w.code] || [])];
+  w.form = [PROTO_SECTION, ...w.form];
+}

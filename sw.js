@@ -1,5 +1,5 @@
 // Помощник для работы без интернета: сохраняет файлы приложения в память телефона.
-const CACHE = 'electro-v2';
+const CACHE = 'electro-v4';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'potee.js', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', e => {
@@ -24,4 +24,15 @@ self.addEventListener('fetch', e => {
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html')))
   );
+});
+
+// Нажали на уведомление — открываем нужную заявку
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const hash = (e.notification.data && e.notification.data.hash) || '';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const url = './#' + hash;
+    if (list.length) { list[0].navigate(url); return list[0].focus(); }
+    return self.clients.openWindow(url);
+  }));
 });
