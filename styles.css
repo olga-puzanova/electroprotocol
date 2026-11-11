@@ -534,10 +534,12 @@ textarea:focus {
 }
 table.res {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 14px;
 }
 table.res td {
+  overflow-wrap: anywhere;
   padding: 8px 4px;
   border-bottom: 1px solid var(--line);
   vertical-align: top;
@@ -545,7 +547,8 @@ table.res td {
 table.res td:nth-child(2) {
   text-align: right;
   font-weight: 600;
-  white-space: nowrap;
+  width: 42%;
+  overflow-wrap: anywhere;
 }
 table.res td:nth-child(3) {
   width: 24px;
@@ -669,7 +672,12 @@ input[type="search"] {
   gap: 6px;
   overflow-x: auto;
   margin-bottom: 12px;
-  padding-bottom: 2px;
+  padding: 4px 0 6px;
+  position: sticky;
+  top: var(--subtabs-top, 110px);
+  z-index: 4;
+  background: var(--bg);
+  scrollbar-width: none;
 }
 .subtabs a {
   white-space: nowrap;
@@ -754,4 +762,321 @@ input[type="search"] {
 }
 .wbtn {
   margin-bottom: 4px;
+}
+
+/* ---- Кнопки знака «+» и «−» ---- */
+.signs {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.sign {
+  height: 48px;
+}
+.sign.on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+/* ---- Нормы ПУЭ и РД ---- */
+details.norms {
+  margin: 4px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 14px;
+}
+details.norms summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--brand);
+}
+details.norms h4 {
+  margin: 8px 12px 4px;
+  font-size: 14px;
+}
+details.norms p {
+  margin: 0 12px 6px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+details.norms[open] {
+  padding-bottom: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* ---- Причины «не годна» ---- */
+.reasons-box {
+  background: var(--bad-bg);
+  border: 1px solid #f3c2c2;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.reasons-box b {
+  color: var(--bad);
+}
+.reasons-box ol {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+.reasons-box li {
+  margin-bottom: 6px;
+}
+.reasons-box .ref,
+.reasons-box .why {
+  color: var(--muted);
+}
+.reasons-box .need {
+  font-weight: 600;
+}
+
+/* ---- Список с галочками ---- */
+.cl-row {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.cl-row.on {
+  border-color: var(--brand);
+  background: #f5f8fc;
+}
+.cl-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cl-check input {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+}
+.cl-col {
+  margin-top: 8px;
+}
+
+/* ---- Таблица (петля фаза-нуль) ---- */
+.trow {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.tgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.tcell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.tcell input,
+.tcell select {
+  width: 100%;
+  min-width: 0;
+}
+.tl {
+  font-size: 13px;
+  color: var(--muted);
+}
+.calc-cell .calc-val {
+  font-weight: 700;
+  padding: 10px 0;
+}
+
+/* ---- Фильтр заявок ---- */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 14px 0 10px;
+}
+.chip {
+  border: 1.5px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.chip span {
+  color: var(--muted);
+  margin-left: 2px;
+}
+.chip.on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+.chip.on span {
+  color: #c9d6e4;
+}
+
+/* ---- Плитки разделов ---- */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+  line-height: 1.25;
+}
+.tile span {
+  font-size: 22px;
+}
+
+/* ---- Архив по папкам ---- */
+details.folder {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  padding: 0 10px;
+}
+details.folder summary {
+  padding: 12px 2px;
+  font-weight: 700;
+  cursor: pointer;
+}
+details.folder summary span {
+  color: var(--muted);
+  font-weight: 400;
+}
+details.folder.sub {
+  background: var(--bg);
+}
+details.folder[open] {
+  padding-bottom: 8px;
+}
+
+/* ---- Документы ---- */
+.doc-img {
+  display: block;
+  max-width: 100%;
+  border-radius: 10px;
+  margin: 10px 0;
+}
+.fname {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 8px 0;
+}
+.tb-text .btn {
+  margin-top: 8px;
+}
+
+/* ---- Оглавление протокола ---- */
+[data-sec] {
+  scroll-margin-top: 170px;
+}
+details.toc summary {
+  font-weight: 700;
+  cursor: pointer;
+  padding: 2px 0;
+}
+details.toc summary .meta {
+  font-weight: 400;
+  font-size: 13px;
+}
+details.toc {
+  scroll-margin-top: 170px;
+}
+[data-toc] {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+.toc-i {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--line);
+  padding: 10px 2px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.toc-m {
+  flex: 0 0 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+.toc-i.ok .toc-m {
+  background: var(--ok-bg);
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.toc-i.bad .toc-m {
+  background: var(--bad-bg);
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.toc-i.fill .toc-m {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.toc-i.bad {
+  color: var(--bad);
+}
+/* Кнопка «↑ Пункты» — появляется, когда оглавление ушло вверх */
+.to-top {
+  position: fixed;
+  right: 14px;
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  z-index: 9;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: var(--brand);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition: opacity 0.2s, transform 0.2s;
+}
+.to-top.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
 }
