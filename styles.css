@@ -1080,3 +1080,14 @@ details.toc {
   pointer-events: auto;
   transform: none;
 }
+
+/* Плитки на главном экране и одна плитка в строку */
+.home-tiles {
+  grid-template-columns: 1fr 1fr;
+  margin-top: 4px;
+}
+.tile-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}

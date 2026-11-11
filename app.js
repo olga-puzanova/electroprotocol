@@ -387,6 +387,8 @@ function photosHTML(photos, ro) {
 }
 
 // ---------- Экраны ----------
+// Кем последний раз заходили на этом телефоне: начальник может добавлять документы, монтёр — отмечать «Ознакомлен»
+const lastRole = () => lsGet('role') === 'b' ? 'b' : 'e';
 function viewRoles() {
   header('ЭлектроПротокол', null);
   app.innerHTML = `
@@ -396,7 +398,9 @@ function viewRoles() {
       <span><b>Электромонтёр</b><br><span class="meta">Заявки, инструктаж, протоколы испытаний</span></span></button>
     <button class="card role" data-role="b"><span class="role-ic">📋</span>
       <span><b>Начальник</b><br><span class="meta">Новые заявки и полученные протоколы</span></span></button>
-    <div class="gap"></div>
+    <div class="tiles home-tiles">
+      <a class="tile" href="#/${lastRole()}/docs/permit"><span>📄</span>Наряды</a>
+      <a class="tile" href="#/${lastRole()}/docs/info"><span>📌</span>Информация для ознакомления</a></div>
     <button class="btn ghost" id="reset">Сбросить демо-данные</button>`;
   app.querySelectorAll('[data-role]').forEach(b => b.onclick = () => { location.hash = '/' + b.dataset.role; });
   $('#reset').onclick = async () => {
@@ -430,10 +434,7 @@ function filterHTML(cur, tasks, archive) {
 }
 const applyFilter = (tasks, k) => tasks.filter(t => !t.archived && (FILTERS.find(f => f[0] === k) || FILTERS[0])[2](t));
 // Плитки разделов: ТБ, наряды, информация
-const sectionsHTML = role => `<div class="tiles">
-  ${role === 'e' ? `<a class="tile" href="#/e/tb"><span>📕</span>Техника безопасности</a>` : ''}
-  <a class="tile" href="#/${role}/docs/permit"><span>📄</span>Наряды</a>
-  <a class="tile" href="#/${role}/docs/info"><span>📌</span>Информация для ознакомления</a></div>`;
+const sectionsHTML = role => role === 'e' ? `<div class="tiles"><a class="tile tile-row" href="#/e/tb"><span>📕</span>Техника безопасности</a></div>` : '';
 
 // ---------- Уведомления ----------
 // Прототип показывает уведомления на этом же телефоне. Чтобы они приходили на другой телефон, нужен сервер.
@@ -1113,7 +1114,6 @@ async function viewBossList() {
   const active = all.filter(t => !t.archived);
   const done = active.filter(t => t.status === 'sent').length;
   app.innerHTML = `
-    ${sectionsHTML('b')}
     <div class="stats">
       <div class="stat"><b>${active.length}</b><span>заявок</span></div>
       <div class="stat"><b>${active.length - done}</b><span>в работе</span></div>
@@ -1199,7 +1199,7 @@ const DOC_KINDS = { permit: ['Наряды', 'наряд'], info: ['Информ
 const readFile = file => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
 async function viewDocs(role, kind) {
   const [title, one] = DOC_KINDS[kind] || DOC_KINDS.info;
-  header(title, '/' + role);
+  header(title, '/');
   const docs = (await docsAll()).filter(d => d.kind === kind).sort((a, b) => b.created - a.created);
   app.innerHTML = `${role === 'b' ? `<a class="btn accent" href="#/b/docnew/${kind}">+ Добавить ${one}</a><div class="gap"></div>` : ''}
     ${kind === 'info' && role === 'e' ? '<p class="meta">Откройте каждый документ и нажмите «Ознакомлен».</p><div class="gap"></div>' : ''}
@@ -1284,6 +1284,7 @@ function router() {
   currentFormId = null;
   if (!p.length) return viewRoles();
   if (p[0] === 'e' || p[0] === 'b') {
+    lsSet('role', p[0]);
     if (p[1] === 'docs') return viewDocs(p[0], p[2]);
     if (p[1] === 'doc') return viewDoc(p[0], p[2]);
   }
