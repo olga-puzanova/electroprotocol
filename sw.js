@@ -1,5 +1,5 @@
 // Помощник для работы без интернета: сохраняет файлы приложения в память телефона.
-const CACHE = 'electro-v11';
+const CACHE = 'electro-v12';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'norms.js', 'potee.js', 'extras.js', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', e => {

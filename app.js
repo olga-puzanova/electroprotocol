@@ -409,22 +409,73 @@ function photosHTML(photos, ro) {
 }
 
 // ---------- Экраны ----------
+// Рисованные иконки (линии, цвет берут от текста)
+const ICONS = {
+  helmet: '<path d="M2.5 17.5h19v2.5h-19z"/><path d="M4.5 17.5V16a7.5 7.5 0 0 1 15 0v1.5"/><path d="M10 9.5V5.5h4v4"/><path d="M7.6 11.5 7 17.5M16.4 11.5l.6 6"/>',
+  clipboard: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/>',
+  permit: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="m9 14 2 2 4-4"/>',
+  meter: '<rect x="6" y="2.5" width="12" height="19" rx="2"/><rect x="8.5" y="5" width="7" height="4" rx="1"/><circle cx="12" cy="14" r="2.5"/><path d="M9 19h.01M15 19h.01"/>',
+  game: '<path d="M7 8h10a4 4 0 0 1 4 4v1a3 3 0 0 1-5.4 1.8L15 14H9l-.6.8A3 3 0 0 1 3 13v-1a4 4 0 0 1 4-4z"/><path d="M7.5 11v3M6 12.5h3M15.5 11.5h.01M17.5 13h.01"/>',
+  info: '<path d="M18 9a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/>',
+  book: '<path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H20v15H5.5A1.5 1.5 0 0 0 4 19.5z"/><path d="M4 19.5A1.5 1.5 0 0 0 5.5 21H20v-3"/><path d="m11 7-2 4h4l-2 4"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+  bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  cloud: '<path d="M7 18a4.5 4.5 0 1 1 .9-8.9A6 6 0 0 1 19 11a3.5 3.5 0 0 1 0 7z"/>',
+  snow: '<path d="M7 15a4.5 4.5 0 1 1 .9-8.9A6 6 0 0 1 19 8a3.5 3.5 0 0 1 0 7"/><path d="M8 19h.01M12 18h.01M16 19h.01M10 22h.01M14 22h.01"/>',
+  rain: '<path d="M7 15a4.5 4.5 0 1 1 .9-8.9A6 6 0 0 1 19 8a3.5 3.5 0 0 1 0 7"/><path d="m8 18-1 3M12 18l-1 3M16 18l-1 3"/>',
+  pin: '<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'
+};
+const icon = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
+const DAYS = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+// Погода для главного экрана: без лишних вопросов — только если место уже разрешено или город запомнен
+async function homeWeather(ask) {
+  const old = jget('homeW', null);
+  if (!ask && old && Date.now() - old.at < 30 * 60e3) return old;
+  if (!isOnline()) return old;
+  let c, place = '';
+  try {
+    const perm = await navigator.permissions?.query({ name: 'geolocation' }).catch(() => null);
+    if (perm?.state === 'granted') c = await getPos();
+  } catch (e) {}
+  if (!c && (lsGet('weatherCity') || ask)) { c = await cityCoords(ask, !ask); place = c.place; }
+  if (!c) return old;
+  const w = (await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.latitude.toFixed(3)}&longitude=${c.longitude.toFixed(3)}&current=temperature_2m,weather_code`)).json()).current;
+  const res = { t: Math.round(w.temperature_2m), code: w.weather_code, place: place || lsGet('weatherCity') || '', at: Date.now() };
+  lsSet('homeW', JSON.stringify(res));
+  return res;
+}
+const wIcon = code => code >= 71 && code <= 86 ? 'snow' : code >= 51 ? 'rain' : code >= 2 ? 'cloud' : 'sun';
+function weatherHTML(w) {
+  if (!w) return `<button class="hw hw-set" id="hwSet">${icon('pin')}<span>Указать город<br><small>для погоды</small></span></button>`;
+  return `<div class="hw">${icon(wIcon(w.code))}<span><b>${w.t > 0 ? '+' : ''}${w.t}°</b><small>${esc(w.place || 'на улице')}</small></span></div>`;
+}
 function viewRoles() {
   header('ЭлектроПротокол', null);
+  const d = new Date(), h = d.getHours();
+  const hello = h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
   app.innerHTML = `
-    <div class="hero"><div class="hero-ic">⚡</div><h2>Кто вы?</h2>
-      <p class="meta">В рабочей версии здесь будет вход по логину.</p></div>
-    <button class="card role" data-role="e"><span class="role-ic">👷</span>
-      <span><b>Электромонтёр</b><br><span class="meta">Заявки, инструктаж, протоколы испытаний</span>
-      <span id="homeUnread"></span></span></button>
-    <button class="card role" data-role="b"><span class="role-ic">📋</span>
-      <span><b>Начальник</b><br><span class="meta">Новые заявки и полученные протоколы</span></span></button>
-    <div class="tiles home-tiles" id="homeTiles"></div>
-    <button class="btn ghost" id="reset">Сбросить демо-данные</button>`;
+    <section class="home-hello"><div><p class="hh-day">${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS_GEN[d.getMonth()]}</p>
+      <h2>${hello}!</h2><p class="hh-sub">Безопасной работы сегодня</p></div>
+      <div id="homeW">${weatherHTML(jget('homeW', null))}</div></section>
+    <h3 class="home-h">Войти как</h3>
+    <div class="roles2">
+      <button class="role-card" data-role="e"><span class="rc-ic">${icon('helmet')}</span><b>Электромонтёр</b>
+        <span class="meta">Заявки, инструктаж, протоколы</span><span id="homeUnread"></span></button>
+      <button class="role-card navy" data-role="b"><span class="rc-ic">${icon('clipboard')}</span><b>Начальник</b>
+        <span class="meta">Заявки и полученные протоколы</span></button>
+    </div>
+    <h3 class="home-h">Быстрый доступ</h3>
+    <div class="tiles home-tiles" id="homeTiles">${tile('#/h/docs/permit', 'permit', 'Наряды') + tile('#/h/devices', 'meter', 'Приборы') + tile('#/h/games', 'game', 'Игры')}</div>
+    <p class="home-note">В рабочей версии здесь будет вход по логину.</p>
+    <button class="btn link" id="reset">Сбросить демо-данные</button>`;
   app.querySelectorAll('[data-role]').forEach(b => b.onclick = () => { location.hash = '/' + b.dataset.role; });
   counts().then(c => { const ht = $('#homeTiles');
-    if (ht) ht.innerHTML = tile('#/h/docs/permit', '📄', 'Наряды') + tile('#/h/devices', '🧰', 'Приборы', c.dev) + tile('#/h/games', '🎮', 'Игры');
-    const el = $('#homeUnread'); if (el && c.unread) el.innerHTML = `<br><span class="badge st-pending">📌 Не прочитано: ${c.unread}</span>`; });
+    if (ht) ht.innerHTML = tile('#/h/docs/permit', 'permit', 'Наряды') + tile('#/h/devices', 'meter', 'Приборы', c.dev) + tile('#/h/games', 'game', 'Игры');
+    const el = $('#homeUnread'); if (el && c.unread) el.innerHTML = `<span class="badge st-pending">Не прочитано: ${c.unread}</span>`; });
+  const bindW = () => { const b = $('#hwSet'); if (b) b.onclick = () => homeWeather(true).then(w => { $('#homeW').innerHTML = weatherHTML(w); bindW(); }).catch(e => toast(e.message)); };
+  bindW();
+  homeWeather().then(w => { const el = $('#homeW'); if (el && w) { el.innerHTML = weatherHTML(w); bindW(); } }).catch(() => {});
   $('#reset').onclick = async () => {
     if (!confirm('Удалить все заявки и протоколы и вернуть примеры?')) return;
     await dbClear(); await seed(); toast('Демо-данные восстановлены');
@@ -478,14 +529,14 @@ async function counts() {
   try { if (navigator.setAppBadge) unread ? navigator.setAppBadge(unread) : navigator.clearAppBadge(); } catch (e) {}
   return { unread, waiting, dev };
 }
-const tile = (href, ic, text, n) => `<a class="tile" href="${href}"><span>${ic}</span>${text}${n ? `<b class="tbadge">${n}</b>` : ''}</a>`;
+const tile = (href, ic, text, n) => `<a class="tile" href="${href}"><span class="t-ic">${ICONS[ic] ? icon(ic) : ic}</span>${text}${n ? `<b class="tbadge">${n}</b>` : ''}</a>`;
 // Куда «Назад» из общих разделов: с главного экрана (h) — на главный
 const homeOf = role => role === 'h' ? '/' : '/' + role;
 // Плитки разделов: информация, ТБ или бланк протокола
 async function sectionsHTML(role) {
   const c = await counts();
-  return `<div class="tiles">${tile(`#/${role}/docs/info`, '📌', 'Информация', role === 'e' ? c.unread : c.waiting)}
-    ${role === 'e' ? tile('#/e/tb', '📕', 'Техника безопасности') : tile('#/b/settings', '⚙️', 'Бланк протокола')}</div>`;
+  return `<div class="tiles">${tile(`#/${role}/docs/info`, 'info', 'Информация', role === 'e' ? c.unread : c.waiting)}
+    ${role === 'e' ? tile('#/e/tb', 'book', 'Техника безопасности') : tile('#/b/settings', 'gear', 'Бланк протокола')}</div>`;
 }
 
 // ---------- Уведомления ----------
