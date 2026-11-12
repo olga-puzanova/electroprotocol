@@ -992,42 +992,44 @@ details.folder[open] {
   margin-top: 8px;
 }
 
-/* ---- Оглавление протокола ---- */
-[data-sec] {
-  scroll-margin-top: 170px;
+/* ---- Сворачиваемые пункты протокола ---- */
+details.sec {
+  padding: 0;
+  scroll-margin-top: 120px;
 }
-details.toc summary {
-  font-weight: 700;
-  cursor: pointer;
-  padding: 2px 0;
-}
-details.toc summary .meta {
-  font-weight: 400;
-  font-size: 13px;
-}
-details.toc {
-  scroll-margin-top: 170px;
-}
-[data-toc] {
-  display: flex;
-  flex-direction: column;
-  margin-top: 8px;
-}
-.toc-i {
+details.sec > summary {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  text-align: left;
-  background: none;
-  border: none;
-  border-top: 1px solid var(--line);
-  padding: 10px 2px;
-  font: inherit;
-  font-size: 14px;
-  color: var(--ink);
+  padding: 14px 16px;
+  font-weight: 700;
   cursor: pointer;
+  list-style: none;
 }
-.toc-m {
+details.sec > summary::-webkit-details-marker {
+  display: none;
+}
+details.sec > summary::after {
+  content: "›";
+  margin-left: auto;
+  font-size: 22px;
+  line-height: 20px;
+  color: var(--muted);
+  transition: transform 0.2s;
+}
+details.sec[open] > summary::after {
+  transform: rotate(90deg);
+}
+details.sec[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.sec-body {
+  padding: 12px 16px 16px;
+}
+.sec-t {
+  flex: 1;
+}
+.sec-m {
   flex: 0 0 22px;
   height: 22px;
   border-radius: 50%;
@@ -1038,49 +1040,132 @@ details.toc {
   font-size: 13px;
   font-weight: 700;
 }
-.toc-i.ok .toc-m {
+.sec-m.ok {
   background: var(--ok-bg);
   border-color: var(--ok);
   color: var(--ok);
 }
-.toc-i.bad .toc-m {
+.sec-m.bad {
   background: var(--bad-bg);
   border-color: var(--bad);
   color: var(--bad);
 }
-.toc-i.fill .toc-m {
+.sec-m.fill {
   border-color: var(--brand);
   color: var(--brand);
 }
-.toc-i.bad {
+.sec-tip {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+/* ---- Таблицы в нормах ---- */
+.ntbl {
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.ntbl table {
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 100%;
+}
+.ntbl th,
+.ntbl td {
+  border: 1px solid var(--line);
+  padding: 5px 7px;
+  vertical-align: top;
+  text-align: left;
+}
+.ntbl th {
+  background: var(--bg);
+}
+pre.npre {
+  overflow-x: auto;
+  font-size: 12px;
+  background: var(--bg);
+  padding: 8px;
+  border-radius: 8px;
+  margin: 8px 0;
+}
+/* ---- Счётчик на плитке ---- */
+.tile {
+  position: relative;
+}
+.tbadge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: var(--bad);
+  color: #fff;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* ---- Список людей, отметки, приборы ---- */
+details.people {
+  margin: 4px 0 14px;
+}
+details.people summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 6px 0;
+}
+.person {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.person b {
+  flex: 1 1 140px;
+}
+.person select {
+  flex: 1 1 140px;
+  width: auto;
+}
+ul.acks {
+  padding-left: 0;
+  list-style: none;
+  margin: 6px 0;
+}
+ul.acks li {
+  padding: 4px 0;
+}
+.txt-bad {
   color: var(--bad);
 }
-/* Кнопка «↑ Пункты» — появляется, когда оглавление ушло вверх */
-.to-top {
-  position: fixed;
-  right: 14px;
-  bottom: calc(96px + env(safe-area-inset-bottom));
-  z-index: 9;
+.tests.ctl li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+.tests.ctl .btn {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+}
+.subtabs a.bad {
+  color: var(--bad);
+}
+.swipe-tip {
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+.linkish {
+  background: none;
   border: none;
-  border-radius: 999px;
-  padding: 10px 14px;
-  background: var(--brand);
-  color: #fff;
+  text-align: left;
   font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(10px);
-  transition: opacity 0.2s, transform 0.2s;
+  color: var(--brand);
+  cursor: pointer;
 }
-.to-top.show {
-  opacity: 1;
-  pointer-events: auto;
-  transform: none;
-}
-
 /* Плитки на главном экране и одна плитка в строку */
 .home-tiles {
   grid-template-columns: 1fr 1fr;
@@ -1090,4 +1175,183 @@ details.toc {
   flex-direction: row;
   align-items: center;
   gap: 10px;
+}
+
+/* ---- Протокол как на бумаге ---- */
+.paper {
+  background: #fff;
+  color: #000;
+  border: 1px solid var(--line);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  padding: 18px 14px;
+  margin-bottom: 14px;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.paper p {
+  margin: 6px 0;
+}
+.ph-top {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  font-size: 12px;
+  border-bottom: 1px solid #000;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+.ph-org {
+  flex: 1 1 60%;
+}
+.ph-obj {
+  flex: 0 1 40%;
+  text-align: right;
+}
+.paper .pc {
+  text-align: center;
+  margin: 10px 0 6px;
+}
+.paper h2.pc {
+  font-size: 18px;
+}
+.paper h3.pc {
+  font-size: 15px;
+}
+.paper ol.pp,
+.paper ol.pr {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+.ptbl {
+  overflow-x: auto;
+}
+.ptbl table,
+.paper table.res {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12.5px;
+}
+.ptbl th,
+.ptbl td,
+.paper table.res td {
+  border: 1px solid #000;
+  padding: 4px 5px;
+  vertical-align: top;
+}
+.ptbl th {
+  font-weight: 700;
+  text-align: center;
+}
+.paper .pres h3 {
+  font-size: 14px;
+  margin: 10px 0 4px;
+}
+.empty-set {
+  color: #b26a00;
+  font-style: italic;
+}
+.signs-block {
+  margin-top: 12px;
+}
+.sg {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin: 10px 0;
+}
+.sg span:first-child {
+  flex: 0 1 40%;
+}
+.sg-line {
+  flex: 1 1 auto;
+  border-bottom: 1px solid #000;
+  min-width: 50px;
+  height: 18px;
+}
+.pfoot {
+  margin-top: 16px;
+  border-top: 1px solid #000;
+  padding-top: 6px;
+  font-size: 12px;
+  text-align: center;
+}
+.view-sw {
+  margin-bottom: 10px;
+}
+@media print {
+  .paper {
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    page-break-after: always;
+  }
+}
+
+/* ---- Тест недели ---- */
+.quiz-o {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  padding: 11px 12px;
+  margin: 6px 0;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+}
+.quiz-o.right {
+  border-color: var(--ok);
+  background: var(--ok-bg);
+}
+.quiz-o.wrong {
+  border-color: var(--bad);
+  background: var(--bad-bg);
+}
+.quiz-ex {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+/* ---- Игры ---- */
+.game {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.game-top {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 420px;
+}
+.game canvas {
+  border-radius: 10px;
+  touch-action: none;
+  max-width: 100%;
+}
+.game-msg {
+  text-align: center;
+  margin: 0;
+}
+.pad {
+  display: grid;
+  grid-template-columns: repeat(4, 64px);
+  gap: 8px;
+  justify-content: center;
+}
+.pad button {
+  height: 56px;
+  font-size: 22px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  touch-action: manipulation;
+}
+.game .btn {
+  max-width: 420px;
 }
