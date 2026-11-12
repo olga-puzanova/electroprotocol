@@ -184,7 +184,7 @@ function optText(f, val) {
 function expand(fields, v) {
   return fields.flatMap(f => f.type === 'repeat'
     ? Array.from({ length: Math.max(1, parseInt(v[f.count]) || 1) }, (_, i) => f.make(i + 1)).flat()
-    : [f]);
+    : f.type === 'dyn' ? f.make(v) : [f]);
 }
 // Поля строки с полным названием: «ВН — положение 1: AB», единица — из конца названия строки
 function rowChildren(f) {
