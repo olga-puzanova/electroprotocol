@@ -419,9 +419,12 @@ function viewRoles() {
       <span id="homeUnread"></span></span></button>
     <button class="card role" data-role="b"><span class="role-ic">📋</span>
       <span><b>Начальник</b><br><span class="meta">Новые заявки и полученные протоколы</span></span></button>
+    <div class="tiles home-tiles" id="homeTiles"></div>
     <button class="btn ghost" id="reset">Сбросить демо-данные</button>`;
   app.querySelectorAll('[data-role]').forEach(b => b.onclick = () => { location.hash = '/' + b.dataset.role; });
-  counts().then(c => { const el = $('#homeUnread'); if (el && c.unread) el.innerHTML = `<br><span class="badge st-pending">📌 Не прочитано: ${c.unread}</span>`; });
+  counts().then(c => { const ht = $('#homeTiles');
+    if (ht) ht.innerHTML = tile('#/h/docs/permit', '📄', 'Наряды') + tile('#/h/devices', '🧰', 'Приборы', c.dev) + tile('#/h/games', '🎮', 'Игры');
+    const el = $('#homeUnread'); if (el && c.unread) el.innerHTML = `<br><span class="badge st-pending">📌 Не прочитано: ${c.unread}</span>`; });
   $('#reset').onclick = async () => {
     if (!confirm('Удалить все заявки и протоколы и вернуть примеры?')) return;
     await dbClear(); await seed(); toast('Демо-данные восстановлены');
@@ -476,14 +479,13 @@ async function counts() {
   return { unread, waiting, dev };
 }
 const tile = (href, ic, text, n) => `<a class="tile" href="${href}"><span>${ic}</span>${text}${n ? `<b class="tbadge">${n}</b>` : ''}</a>`;
-// Плитки разделов: наряды, информация, приборы, ТБ, игры
+// Куда «Назад» из общих разделов: с главного экрана (h) — на главный
+const homeOf = role => role === 'h' ? '/' : '/' + role;
+// Плитки разделов: информация, ТБ или бланк протокола
 async function sectionsHTML(role) {
   const c = await counts();
-  return `<div class="tiles">${tile(`#/${role}/docs/permit`, '📄', 'Наряды')}
-    ${tile(`#/${role}/docs/info`, '📌', 'Информация', role === 'e' ? c.unread : c.waiting)}
-    ${tile(`#/${role}/devices`, '🧰', 'Приборы', c.dev)}
-    ${role === 'e' ? tile('#/e/tb', '📕', 'Техника безопасности') : tile('#/b/settings', '⚙️', 'Бланк протокола')}
-    ${tile(`#/${role}/games`, '🎮', 'Игры')}</div>`;
+  return `<div class="tiles">${tile(`#/${role}/docs/info`, '📌', 'Информация', role === 'e' ? c.unread : c.waiting)}
+    ${role === 'e' ? tile('#/e/tb', '📕', 'Техника безопасности') : tile('#/b/settings', '⚙️', 'Бланк протокола')}</div>`;
 }
 
 // ---------- Уведомления ----------
@@ -1310,13 +1312,15 @@ function normText(sec, v, r) {
 function paperHTML(t, it, k) {
   const b = blank(), wt = WORK_TYPES[it.type], v = it.values, r = wt.check(v);
   const N = typeof NORMS !== 'undefined' ? NORMS[wt.code] : null;
+  // Пункт НД: по выбранному виду испытаний; если вид не выбран — оба документа
   const ndRef = sec => {
     if (!sec.ref) return '';
-    const ri = N?.map[sec.ref - 1];
-    return isRD(v) && ri >= 0 ? `РД 34.45-51.300-97 п. ${N.rd[ri].n}` : `ПУЭ п. ${wt.code}, п. ${sec.ref}`;
+    const ri = N?.map[sec.ref - 1], rd = ri >= 0 ? `РД 34.45-51.300-97 п. ${N.rd[ri].n}` : '', pue = `ПУЭ п. ${wt.code}, пункт ${sec.ref}`;
+    return v.mode === 'M' ? rd || pue : v.mode === 'P' ? pue : [pue, rd].filter(Boolean).join('; ');
   };
+  const ndVal = sec => (typeof sec.nd === 'function' ? sec.nd(v) : sec.nd) || normText(sec, v, r) || 'по инструкции завода-изготовителя';
   const secs = wt.form.filter(sec => sec.ref && secVisible(sec, v));
-  const ndRows = secs.map(sec => [sec.title.replace(/^\d+\.\s*/, ''), ndRef(sec), normText(sec, v, r) || (/паспорт/i.test(sec.note || '') ? 'по паспорту' : '—')]);
+  const ndRows = secs.map(sec => [sec.title.replace(/^\d+\.\s*/, ''), ndRef(sec), ndVal(sec)]);
   // Результаты — те же строки, что в кратком отчёте
   const results = protocolHTML(it, k, t.items.length, true);
   const devs = rowsOf(v, 'devices');
@@ -1458,7 +1462,7 @@ const DOC_KINDS = { permit: ['Наряды', 'наряд'], info: ['Информ
 const readFile = file => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
 async function viewDocs(role, kind) {
   const [title, one] = DOC_KINDS[kind] || DOC_KINDS.info;
-  header(title, '/' + role);
+  header(title, homeOf(role));
   const docs = (await docsAll()).filter(d => d.kind === kind).sort((a, b) => b.created - a.created);
   const people = getStaff().filter(n => !/начальник/i.test(staffPos(n)));
   const infoBadge = d => {
@@ -1468,21 +1472,21 @@ async function viewDocs(role, kind) {
     const all = people.length && n >= people.length, late = !all && d.due && d.due < today();
     return `<span class="badge ${all ? 'st-sent' : late ? 'st-not' : 'st-new'}">${late ? 'Срок прошёл · ' : ''}Ознакомились: ${n}${people.length ? ' из ' + people.length : ''}</span>`;
   };
-  app.innerHTML = `${role === 'b' ? `<a class="btn accent" href="#/b/docnew/${kind}">+ Добавить ${one}</a><div class="gap"></div>` : ''}
-    ${kind === 'info' && role === 'e' ? '<div id="quizCard"></div><p class="meta">Откройте каждый документ и нажмите «Ознакомлен».</p><div class="gap"></div>' : ''}
+  app.innerHTML = `${role !== 'e' ? `<a class="btn accent" href="#/${role}/docnew/${kind}">+ Добавить ${one}</a><div class="gap"></div>` : ''}
+    ${kind === 'info' && role === 'b' ? '<div id="quizCard"></div>' : ''}${kind === 'info' && role === 'e' ? '<div id="quizCard"></div><p class="meta">Откройте каждый документ и нажмите «Ознакомлен».</p><div class="gap"></div>' : ''}
     ${docs.map(d => `<a class="card task" href="#/${role}/doc/${d.id}">
       <div class="top-line"><span>${fmtDate(d.created)}${d.due ? ' · до ' + fmtDate(d.due) : ''}</span>${kind === 'info' ? infoBadge(d) : ''}</div>
       <div class="obj">${esc(d.title)}</div>
       ${d.text ? `<p class="meta">${esc(d.text.slice(0, 140))}${d.text.length > 140 ? '…' : ''}</p>` : ''}
-      ${d.files?.length ? `<p class="meta">📎 Файлов: ${d.files.length}</p>` : ''}</a>`).join('') || `<div class="card meta">Пока пусто.${role === 'b' ? '' : ' Начальник добавит сюда документы.'}</div>`}`;
+      ${d.files?.length ? `<p class="meta">📎 Файлов: ${d.files.length}</p>` : ''}</a>`).join('') || `<div class="card meta">Пока пусто.${role !== 'e' ? '' : ' Начальник добавит сюда документы.'}</div>`}`;
   const qc = $('#quizCard');
   if (qc) qc.innerHTML = quizCardHTML(role);
 }
-async function viewDocEdit(kind, id) {
+async function viewDocEdit(kind, id, role = 'b') {
   const old = id ? await docGet(id) : null;
   kind = old?.kind || kind;
   const [title, one] = DOC_KINDS[kind] || DOC_KINDS.info;
-  header(old ? 'Изменить' : `Новый ${one}`, `/b/docs/${kind}`);
+  header(old ? 'Изменить' : `Новый ${one}`, `/${role}/docs/${kind}`);
   const files = [...(old?.files || [])];
   app.innerHTML = `<form class="card" id="df" novalidate>
     <label class="field"><span class="lbl">Название <b class="req">*</b></span><input name="title" value="${esc(old?.title)}" autocomplete="off"></label>
@@ -1512,7 +1516,7 @@ async function viewDocEdit(kind, id) {
     await docPut(d);
     toast('Сохранено');
     if (!old) notify(kind === 'info' ? 'Новая информация для ознакомления' : 'Новый наряд', d.title, `/e/doc/${d.id}`);
-    location.hash = `/b/docs/${kind}`;
+    location.hash = `/${role}/docs/${kind}`;
   };
 }
 // Открыть файл: картинки показываем сразу, остальное — кнопкой
@@ -1550,7 +1554,7 @@ async function viewDoc(role, id) {
     ${(d.files || []).map((f, i) => f.type?.startsWith('image/') ? `<img class="doc-img" src="${f.data}" alt="${esc(f.name)}">`
       : `<button class="btn ghost small" data-open="${i}">📎 Открыть «${esc(f.name)}»</button>`).join('')}</div>
     ${ackHTML}
-    ${role === 'b' ? `<div class="actions"><a class="btn ghost small" href="#/b/docedit/${d.id}">✎ Изменить</a><button class="btn ghost small danger" id="ddel">Удалить</button></div>` : ''}`;
+    ${role !== 'e' ? `<div class="actions"><a class="btn ghost small" href="#/${role}/docedit/${d.id}">✎ Изменить</a><button class="btn ghost small danger" id="ddel">Удалить</button></div>` : ''}`;
   app.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openFile(d.files[+b.dataset.open]));
   const ack = $('#ackBtn');
   if (ack) ack.onclick = async () => {
@@ -1558,12 +1562,14 @@ async function viewDoc(role, id) {
     if (!name) { toast('Выберите свою фамилию'); return; }
     lsSet('me', name);
     d.acks = [...acksOf(d).filter(a => a.name && a.name !== name), { name, at: Date.now() }]; d.ackAt = null;
-    await docPut(d); await counts(); toast('Отмечено: ознакомлен'); router();
+    await docPut(d); await counts(); toast('Отмечено: ознакомлен');
+    notify(`${name} ознакомился`, `«${d.title}»${d.due && today() > d.due ? ' — после срока' : ''}`, `/b/doc/${d.id}`);
+    router();
   };
   const del = $('#ddel');
   if (del) del.onclick = async () => {
     if (!confirm(`Удалить «${d.title}»? Отменить нельзя.`)) return;
-    await docDel(d.id); toast('Удалено'); location.hash = `/b/docs/${d.kind}`;
+    await docDel(d.id); toast('Удалено'); location.hash = `/${role}/docs/${d.kind}`;
   };
 }
 
@@ -1571,7 +1577,7 @@ async function viewDoc(role, id) {
 // Хранятся в том же хранилище, что и документы (kind: 'device'); название попадает в список приборов протокола
 const devLabel = d => [d.name, d.no ? '№ ' + d.no : ''].filter(Boolean).join(' ');
 async function viewDevices(role) {
-  header('Приборы', '/' + role);
+  header('Приборы', homeOf(role));
   const devs = (await docsAll()).filter(d => d.kind === 'device').sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   const known = new Set(devs.map(devLabel));
   const loose = getList('devices').filter(n => !known.has(n));
@@ -1656,14 +1662,19 @@ function router() {
   window.scrollTo(0, 0);
   currentFormId = null; swipeNav = null;
   if (!p.length) return viewRoles();
-  if (p[0] === 'e' || p[0] === 'b') {
-    lsSet('role', p[0]);
+  if (p[0] === 'h') {
+    if (p[1] === 'docnew') return viewDocEdit(p[2], null, 'h');
+    if (p[1] === 'docedit') return viewDocEdit(null, p[2], 'h');
+  }
+  if (p[0] === 'e' || p[0] === 'b' || p[0] === 'h') {
+    if (p[0] !== 'h') lsSet('role', p[0]);
     if (p[1] === 'docs') return viewDocs(p[0], p[2]);
     if (p[1] === 'doc') return viewDoc(p[0], p[2]);
     if (p[1] === 'devices') return viewDevices(p[0]);
     if (p[1] === 'device') return viewDeviceEdit(p[0], p[2]);
     if (p[1] === 'games') return viewGames(p[0], p[2]);
     if (p[1] === 'quiz') return viewQuiz(p[0]);
+    if (p[1] === 'rating') return viewRating(p[0]);
   }
   if (p[0] === 'e') {
     if (p[1] === 'tb') return p[2] === 'groups' ? viewTBGroups() : p[2] !== undefined ? viewTBChapter(+p[2], p[3]) : viewTB();
@@ -1677,10 +1688,11 @@ function router() {
     if (p[1] === 'edit') return viewEdit('b', p[2]);
     if (p[1] === 'task') return viewBossTask(p[2], p[3]);
     if (p[1] === 'settings') return viewSettings();
-    if (p[1] === 'docnew') return viewDocEdit(p[2]);
-    if (p[1] === 'docedit') return viewDocEdit(null, p[2]);
+    if (p[1] === 'docnew') return viewDocEdit(p[2], null, 'b');
+    if (p[1] === 'docedit') return viewDocEdit(null, p[2], 'b');
     return viewBossList();
   }
+  if (p[0] === 'h') return viewRoles();
   viewRoles();
 }
 

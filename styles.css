@@ -1355,3 +1355,40 @@ ul.acks li {
 .game .btn {
   max-width: 420px;
 }
+
+/* Рейтинг и результаты теста */
+table.rate td:nth-child(3), table.rate td:first-child { text-align: center; white-space: nowrap; }
+details.qres { border-top: 1px solid var(--line, #e3e6ea); padding: 8px 0; }
+details.qres summary { cursor: pointer; }
+details.qres ol { margin: 6px 0 0 18px; padding: 0; }
+details.qres li { margin-bottom: 6px; }
+.big-medal { font-size: 40px; display: block; line-height: 1.1; }
+.quiz-card .meta { margin: 6px 0 0; }
+
+/* Косынка */
+.sol { --cw: calc((min(100vw, 560px) - 32px - 6 * 4px) / 7); user-select: none; }
+.sol-top, .sol-tab { display: grid; grid-template-columns: repeat(7, var(--cw)); gap: 4px; }
+.sol-tab { margin-top: 10px; align-items: start; min-height: 300px; }
+.pile, .col { min-height: calc(var(--cw) * 1.4); }
+.col .stack { height: calc(var(--cw) * 0.32); }
+.col .stack.up { height: calc(var(--cw) * 0.5); }
+.col .stack:last-child { height: auto; }
+.sc, .slot { width: var(--cw); height: calc(var(--cw) * 1.4); border-radius: 5px; box-sizing: border-box; }
+.sc { background: #fff; border: 1px solid #b9c1cc; color: #1c2430; position: relative; font-size: calc(var(--cw) * 0.3); line-height: 1; padding: 2px 3px; cursor: pointer; }
+.sc span { font-weight: 700; display: block; }
+.sc b { position: absolute; bottom: 3px; right: 4px; font-size: calc(var(--cw) * 0.45); }
+.sc.red { color: #c62828; }
+.sc.back { background: repeating-linear-gradient(45deg, #1f4e79, #1f4e79 4px, #2a6aa3 4px, #2a6aa3 8px); border-color: #16324f; }
+.sc[data-sel] { outline: 3px solid var(--accent); outline-offset: -1px; background: #fff7d6; }
+.slot { border: 2px dashed #b9c1cc; color: #9aa4b1; display: flex; align-items: center; justify-content: center; font-size: calc(var(--cw) * 0.45); }
+
+/* Шахматы */
+.board { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: min(100%, 440px); aspect-ratio: 1; margin: 8px auto; border: 3px solid #5b3b1e; border-radius: 4px; }
+.sq { font-family: "Segoe UI Symbol", "DejaVu Sans", "Noto Sans Symbols2", serif; font-variant-emoji: text; aspect-ratio: 1; min-width: 0; min-height: 0; border: 0; padding: 0; margin: 0; font-size: min(9vw, 40px); line-height: 1; display: flex; align-items: center; justify-content: center; color: #111; cursor: pointer; position: relative; }
+.sq.lt { background: #f0d9b5; }
+.sq.dk { background: #b58863; }
+.sq.last { box-shadow: inset 0 0 0 100px rgba(245, 184, 0, .35); }
+.sq.sel { box-shadow: inset 0 0 0 3px #1f4e79; }
+.sq.dot::after { content: ''; width: 26%; height: 26%; border-radius: 50%; background: rgba(31, 78, 121, .45); position: absolute; }
+.sq.cap { box-shadow: inset 0 0 0 4px rgba(198, 40, 40, .7); }
+.chess-wrap .game-msg { text-align: center; margin: 6px 0; }
