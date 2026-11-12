@@ -459,7 +459,13 @@ const TRANSFORMER = {
       { id: 'serial', label: 'Заводской номер', type: 'text' },
       { id: 'power', label: 'Мощность', type: 'number', unit: 'кВА' },
       { id: 'voltage', label: 'Напряжение ВН/НН', type: 'text', unit: 'кВ' },
-      { id: 'scheme', label: 'Схема и группа соединения', type: 'select', options: ['Y/Yн-0', 'Д/Yн-11', 'Y/Д-11', 'Y/Zн-11'] }
+      { id: 'year', label: 'Год выпуска', type: 'number' },
+      { id: 'i_hv', label: 'Номинальный ток ВН', type: 'number', unit: 'А' },
+      { id: 'i_lv', label: 'Номинальный ток НН', type: 'number', unit: 'А' },
+      { id: 'uk', label: 'Напряжение короткого замыкания Uк', type: 'number', unit: '%' },
+      { id: 'scheme', label: 'Схема и группа соединения', type: 'select', options: ['Y/Yн-0', 'Д/Yн-11', 'Y/Д-11', 'Y/Zн-11'] },
+      { id: 'reg_type', label: 'Способ регулирования напряжения', type: 'select', options: ['ПБВ', 'РПН'] },
+      { id: 'reg_range', label: 'Пределы регулирования', type: 'text', hint: 'Например: ±2×2,5 % или ±9×1,78 %' }
     ]},
     genericItem(1, T_ITEMS[0]),
     { title: `2. ${T_ITEMS[1]}`, ref: 2,

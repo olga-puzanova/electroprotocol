@@ -195,9 +195,9 @@ function viewGames(role, which) {
     <div class="card"><h3>🏆 Таблица игроков</h3>${list.length ? `<div class="ptbl"><table class="rate"><tr><th>#</th><th>Игрок</th><th>Очки</th><th>🐍</th><th>🧱</th><th>🃏</th><th>♟</th></tr>${list.map(([n, p], i) =>
       `<tr><td>${['🥇', '🥈', '🥉'][i] || i + 1}</td><td>${esc(n)}</td><td><b>${p.pts}</b></td><td>${p.snake || 0}</td><td>${p.blocks || 0}</td><td>${p.sol || 0}</td><td>${p.chess || 0}</td></tr>`).join('')}</table></div>
       <p class="meta">🐍 и 🧱 — рекорд, 🃏 и ♟ — победы.</p>` : '<p class="meta">Пока никто не играл. Выберите игрока и начинайте.</p>'}</div>`;
-  $('#gPlayer').onchange = e => {
+  $('#gPlayer').onchange = async e => {
     let v = e.target.value;
-    if (v === '__new') { v = (prompt('Имя игрока') || '').trim(); if (!v) { viewGames(role); return; } }
+    if (v === '__new') { v = (await askText('Новый игрок', '', '', 'Имя') || '').trim(); if (!v) { viewGames(role); return; } }
     lsSet('player', v); viewGames(role);
   };
 }

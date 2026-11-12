@@ -85,6 +85,30 @@ const dbDel = id => req('readwrite', s => s.delete(id));
 const dbClear = () => req('readwrite', s => s.clear());
 
 // Пополняемые списки, которые запоминаются на телефоне: люди, приборы, объекты ЗУ, щиты
+// Подсказки под полем ввода: сначала то, что начинается с набранных букв, потом остальное, где они встречаются
+function attachSuggest(inp, getItems, onPick, onDel) {
+  const box = document.createElement('div');
+  box.className = 'sugg'; box.hidden = true;
+  inp.after(box);
+  const show = () => {
+    const q = inp.value.trim().toLowerCase(), items = getItems();
+    const starts = items.filter(x => x.toLowerCase().startsWith(q)), has = items.filter(x => !x.toLowerCase().startsWith(q) && x.toLowerCase().includes(q));
+    const list = [...starts, ...has].filter(x => x.toLowerCase() !== q).slice(0, 8);
+    box.innerHTML = list.map(x => `<div class="sg-i"><button type="button" class="sg-pick" data-v="${esc(x)}">${esc(x)}</button>${onDel ? `<button type="button" class="sg-del" data-d="${esc(x)}" aria-label="Убрать из списка">×</button>` : ''}</div>`).join('');
+    box.hidden = !list.length;
+  };
+  inp.addEventListener('input', show);
+  inp.addEventListener('focus', show);
+  inp.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 200));
+  box.addEventListener('mousedown', e => e.preventDefault());
+  box.addEventListener('click', e => {
+    const p = e.target.closest('.sg-pick'), d = e.target.closest('.sg-del');
+    if (p) { inp.value = p.dataset.v; box.hidden = true; onPick?.(p.dataset.v); }
+    if (d && confirm(`Убрать «${d.dataset.d}» из подсказок?`)) { onDel(d.dataset.d); show(); }
+  });
+}
+// Справочник объектов: название → адрес и оборудование (пополняется при сохранении заявки)
+const objBook = () => jget('objBook', {});
 function getList(key) { try { return JSON.parse(lsGet(key) || '[]'); } catch (e) { return []; } }
 function addToList(key, names) {
   const s = new Set(getList(key));
@@ -148,7 +172,7 @@ async function syncPending() {
   syncing = true;
   try {
     const list = (await dbAll()).filter(t => t.status === 'pending');
-    for (const t of list) { t.status = 'sent'; t.sentAt = Date.now(); await dbPut(t); }
+    for (const t of list) { t.status = 'sent'; t.sentAt = Date.now(); await dbPut(t); try { kustMark(t); } catch (e) {} }
     if (list.length) {
       toast(list.length === 1 ? 'Отправлено начальнику' : `Отправлено заявок: ${list.length}`);
       // В прототипе начальник и монтёр на одном телефоне; в рабочей версии уведомление придёт начальнику через сервер
@@ -424,32 +448,44 @@ const ICONS = {
   cloud: '<path d="M7 18a4.5 4.5 0 1 1 .9-8.9A6 6 0 0 1 19 11a3.5 3.5 0 0 1 0 7z"/>',
   snow: '<path d="M7 15a4.5 4.5 0 1 1 .9-8.9A6 6 0 0 1 19 8a3.5 3.5 0 0 1 0 7"/><path d="M8 19h.01M12 18h.01M16 19h.01M10 22h.01M14 22h.01"/>',
   rain: '<path d="M7 15a4.5 4.5 0 1 1 .9-8.9A6 6 0 0 1 19 8a3.5 3.5 0 0 1 0 7"/><path d="m8 18-1 3M12 18l-1 3M16 18l-1 3"/>',
+  send: '<path d="M21 3 3 10.5l7 2.5 2.5 7z"/><path d="m21 3-11 10"/>',
+  people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2A5 5 0 0 1 21.5 19"/>',
+  rig: '<path d="M12 2 7 21M12 2l5 19M8.6 15h6.8M9.8 10h4.4M4 21h16"/><path d="M12 2v3"/>',
+  phone: '<path d="M5 3h3.5l1.5 5-2.2 1.4a11 11 0 0 0 6.8 6.8L16 14l5 1.5V19a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2z"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   pin: '<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'
 };
 const icon = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
 const DAYS = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
 // Погода для главного экрана: без лишних вопросов — только если место уже разрешено или город запомнен
-async function homeWeather(ask) {
+async function homeWeather(mode) {
   const old = jget('homeW', null);
-  if (!ask && old && Date.now() - old.at < 30 * 60e3) return old;
-  if (!isOnline()) return old;
-  let c, place = '';
-  try {
-    const perm = await navigator.permissions?.query({ name: 'geolocation' }).catch(() => null);
-    if (perm?.state === 'granted') c = await getPos();
-  } catch (e) {}
-  if (!c && (lsGet('weatherCity') || ask)) { c = await cityCoords(ask, !ask); place = c.place; }
+  if (!mode && old && Date.now() - old.at < 30 * 60e3) return old;
+  if (!isOnline()) { if (mode) throw new Error('Нет интернета'); return old; }
+  let c, place = '', why = '';
+  if (mode !== 'city') {
+    let perm = null;
+    try { perm = (await navigator.permissions?.query({ name: 'geolocation' }))?.state; } catch (e) {}
+    // Сам по себе спрашиваем место, только если уже разрешено; по нажатию — всегда
+    if (mode === 'locate' || perm === 'granted') { try { c = await getPos(); } catch (e) { why = e.message; } }
+  }
+  if (!c && (lsGet('weatherCity') || mode)) {
+    c = await cityCoords(mode === 'city', !mode, why ? `Место не определилось: ${why}. Введите город или посёлок.` : '');
+    place = c.place;
+  }
   if (!c) return old;
   const w = (await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.latitude.toFixed(3)}&longitude=${c.longitude.toFixed(3)}&current=temperature_2m,weather_code`)).json()).current;
-  const res = { t: Math.round(w.temperature_2m), code: w.weather_code, place: place || lsGet('weatherCity') || '', at: Date.now() };
+  const res = { t: Math.round(w.temperature_2m), code: w.weather_code, place: place || '', at: Date.now() };
   lsSet('homeW', JSON.stringify(res));
   return res;
 }
 const wIcon = code => code >= 71 && code <= 86 ? 'snow' : code >= 51 ? 'rain' : code >= 2 ? 'cloud' : 'sun';
 function weatherHTML(w) {
-  if (!w) return `<button class="hw hw-set" id="hwSet">${icon('pin')}<span>Указать город<br><small>для погоды</small></span></button>`;
-  return `<div class="hw">${icon(wIcon(w.code))}<span><b>${w.t > 0 ? '+' : ''}${w.t}°</b><small>${esc(w.place || 'на улице')}</small></span></div>`;
+  if (!w) return `<button type="button" class="hw hw-set" data-hw="locate">${icon('pin')}<span>Погода<br><small>нажмите</small></span></button>`;
+  return `<button type="button" class="hw hw-set" data-hw="city" title="Сменить город">${icon(wIcon(w.code))}<span><b>${w.t > 0 ? '+' : ''}${w.t}°</b><small>${esc(w.place || 'здесь')}</small></span></button>`;
 }
+const homeTilesHTML = c => tile('#/h/kusty', 'rig', 'Кусты', kustOverdue()) + tile('#/h/docs/permit', 'permit', 'Наряды') + tile('#/h/devices', 'meter', 'Приборы', c.dev) +
+  tile('#/h/phones', 'phone', 'Телефоны') + tile('#/h/people', 'people', 'Люди', upcomingBdays(0).length) + tile('#/h/games', 'game', 'Игры');
 function viewRoles() {
   header('ЭлектроПротокол', null);
   const d = new Date(), h = d.getHours();
@@ -458,6 +494,7 @@ function viewRoles() {
     <section class="home-hello"><div><p class="hh-day">${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS_GEN[d.getMonth()]}</p>
       <h2>${hello}!</h2><p class="hh-sub">Безопасной работы сегодня</p></div>
       <div id="homeW">${weatherHTML(jget('homeW', null))}</div></section>
+    ${bdayBannerHTML()}
     <h3 class="home-h">Войти как</h3>
     <div class="roles2">
       <button class="role-card" data-role="e"><span class="rc-ic">${icon('helmet')}</span><b>Электромонтёр</b>
@@ -466,16 +503,22 @@ function viewRoles() {
         <span class="meta">Заявки и полученные протоколы</span></button>
     </div>
     <h3 class="home-h">Быстрый доступ</h3>
-    <div class="tiles home-tiles" id="homeTiles">${tile('#/h/docs/permit', 'permit', 'Наряды') + tile('#/h/devices', 'meter', 'Приборы') + tile('#/h/games', 'game', 'Игры')}</div>
+    <div class="tiles home-tiles" id="homeTiles">${homeTilesHTML({})}</div>
     <p class="home-note">В рабочей версии здесь будет вход по логину.</p>
     <button class="btn link" id="reset">Сбросить демо-данные</button>`;
   app.querySelectorAll('[data-role]').forEach(b => b.onclick = () => { location.hash = '/' + b.dataset.role; });
   counts().then(c => { const ht = $('#homeTiles');
-    if (ht) ht.innerHTML = tile('#/h/docs/permit', 'permit', 'Наряды') + tile('#/h/devices', 'meter', 'Приборы', c.dev) + tile('#/h/games', 'game', 'Игры');
+    if (ht) ht.innerHTML = homeTilesHTML(c);
     const el = $('#homeUnread'); if (el && c.unread) el.innerHTML = `<span class="badge st-pending">Не прочитано: ${c.unread}</span>`; });
-  const bindW = () => { const b = $('#hwSet'); if (b) b.onclick = () => homeWeather(true).then(w => { $('#homeW').innerHTML = weatherHTML(w); bindW(); }).catch(e => toast(e.message)); };
-  bindW();
-  homeWeather().then(w => { const el = $('#homeW'); if (el && w) { el.innerHTML = weatherHTML(w); bindW(); } }).catch(() => {});
+  // Нажатие на погоду: без данных — определить место (или спросить город), с данными — сменить город
+  $('#homeW').onclick = async e => {
+    const b = e.target.closest('[data-hw]'); if (!b || b.disabled) return;
+    const box = $('#homeW'), was = box.innerHTML;
+    b.disabled = true; b.querySelector('span').innerHTML = 'Определяем…';
+    try { const w = await homeWeather(b.dataset.hw); box.innerHTML = weatherHTML(w); if (w) toast(`Погода: ${w.t > 0 ? '+' : ''}${w.t}°${w.place ? ', ' + w.place : ''}`); }
+    catch (err) { box.innerHTML = was; toast(err.message || 'Погода не загрузилась'); }
+  };
+  homeWeather().then(w => { const el = $('#homeW'); if (el && w) el.innerHTML = weatherHTML(w); }).catch(() => {});
   $('#reset').onclick = async () => {
     if (!confirm('Удалить все заявки и протоколы и вернуть примеры?')) return;
     await dbClear(); await seed(); toast('Демо-данные восстановлены');
@@ -491,18 +534,19 @@ const permitOf = t => t.permit || t.items.map(i => i.values.permit).find(Boolean
 const permitHTML = t => permitOf(t) ? `Наряд-допуск / распоряжение № <b>${esc(permitOf(t))}</b><br>` : '';
 
 // ---------- Фильтр заявок ----------
+// По умолчанию — новые (не отправленные): открыл и сразу видишь, что делать
 const FILTERS = [
-  ['all', 'Все', t => true],
-  ['work', 'В работе', t => t.status !== 'sent'],
-  ['done', 'Выполнено', t => t.status === 'sent' && t.outcome !== 'notdone'],
-  ['notdone', 'Не выполнялась', t => t.status === 'sent' && t.outcome === 'notdone']
+  ['work', 'Новые', t => t.status !== 'sent'],
+  ['done', 'Выполнены', t => t.status === 'sent' && t.outcome !== 'notdone'],
+  ['notdone', 'Не выполн.', t => t.status === 'sent' && t.outcome === 'notdone'],
+  ['all', 'Все', t => true]
 ];
-let filterE = 'all', filterB = 'all';
+let filterE = 'work', filterB = 'work';
 function filterHTML(cur, tasks, archive) {
   const list = archive ? [...FILTERS, ['archive', 'Архив', t => t.archived]] : FILTERS;
-  return `<div class="chips">${list.map(([k, l, fn]) => {
+  return `<div class="seg" style="--n:${list.length}">${list.map(([k, l, fn]) => {
     const n = tasks.filter(t => k === 'archive' ? t.archived : !t.archived && fn(t)).length;
-    return `<button class="chip ${k === cur ? 'on' : ''}" data-filter="${k}">${l} <span>${n}</span></button>`;
+    return `<button class="seg-b ${k === cur ? 'on' : ''}" data-filter="${k}"><b>${n}</b><span>${l}</span></button>`;
   }).join('')}</div>`;
 }
 const applyFilter = (tasks, k) => tasks.filter(t => !t.archived && (FILTERS.find(f => f[0] === k) || FILTERS[0])[2](t));
@@ -579,13 +623,25 @@ async function viewElList() {
     ${filterHTML(filterE, all)}
     ${tasks.length ? tasks.map(t => {
       const [sl, sc] = stOf(t);
-      return `<a class="card task" href="#/e/task/${t.id}">
+      const open = t.status !== 'sent' && t.status !== 'pending';
+      return `<div class="card task-c"><a class="task" href="#/e/task/${t.id}">
         <div class="top-line"><span>${esc(t.number)} · ${fmtDate(t.date)}</span><span class="badge ${sc}">${sl}</span></div>
         <div class="obj">${esc(t.object)}</div>
-        <p class="meta">${t.address ? esc(t.address) + '<br>' : ''}${permitHTML(t)}</p>${testsHTML(t)}</a>`;
-    }).join('') : '<div class="card meta">Здесь заявок нет.</div>'}`;
+        <p class="meta">${t.address ? esc(t.address) + '<br>' : ''}${permitHTML(t)}</p>${testsHTML(t)}</a>
+        ${open ? `<div class="task-acts"><button type="button" class="btn ghost small" data-nd="${t.id}">Не выполнялась</button>
+          <a class="btn accent small" href="#/e/task/${t.id}">${t.status === 'new' ? 'Приступить к работе' : 'Продолжить'}</a></div>` : ''}</div>`;
+    }).join('') : `<div class="card meta">${filterE === 'work' ? 'Новых заявок нет.' : 'Здесь заявок нет.'}</div>`}`;
   bindNotifyBtn();
   app.querySelectorAll('[data-filter]').forEach(b => b.onclick = () => { filterE = b.dataset.filter; viewElList(); });
+  // «Не выполнялась» прямо из списка, не открывая заявку
+  app.querySelectorAll('[data-nd]').forEach(b => b.onclick = async () => {
+    const t = all.find(x => x.id === b.dataset.nd);
+    const reason = await askText(`Заявка ${t.number} не выполнялась. Почему?`, t.object, '', 'Причина');
+    if (reason === null) return;
+    t.outcome = 'notdone'; t.reason = reason.trim() || 'не указана';
+    await submit(t);
+    viewElList();
+  });
 }
 
 async function viewTask(id, tab, k) {
@@ -606,6 +662,7 @@ async function viewTask(id, tab, k) {
       <div class="actions">
         <a class="btn ghost small" href="#/e/edit/${id}">✎ Изменить</a>
         <button class="btn ghost small danger" id="delBtn">Удалить</button>
+        ${t.status !== 'new' ? `<button class="btn ghost small wide share-btn" data-share>${icon('send')} Отправить в мессенджер</button>` : ''}
         ${t.status === 'sent'
           ? `<button class="btn ghost small wide" id="reopenBtn">Вернуть в работу</button>`
           : t.status !== 'pending' ? `<button class="btn ghost small wide" id="notDoneBtn">Вся заявка не выполнялась</button>` : ''}
@@ -614,10 +671,11 @@ async function viewTask(id, tab, k) {
     <nav class="tabs">${tabs.map(([key, l]) => `<a href="#/e/task/${id}/${key}" class="${key === tab ? 'active' : ''}">${l}</a>`).join('')}</nav>
     <div id="tab"></div>`;
   $('#delBtn').onclick = () => deleteTask(t, '/e');
+  const sh = app.querySelector('[data-share]'); if (sh) sh.onclick = () => shareProtocol(t);
   app.querySelectorAll('[data-skip]').forEach(b => b.onclick = async () => {
     const it = t.items[+b.dataset.skip];
     if (!it.skip) {
-      const reason = prompt(`Почему не выполнялось «${typeName(it.type)}»?`);
+      const reason = await askText(`Почему не выполнялось «${typeName(it.type)}»?`, '', '', 'Причина');
       if (reason === null) return;
       it.skip = true; it.reason = reason.trim() || 'не указана';
     } else { it.skip = false; it.reason = ''; }
@@ -626,7 +684,7 @@ async function viewTask(id, tab, k) {
   });
   const nd = $('#notDoneBtn');
   if (nd) nd.onclick = async () => {
-    const reason = prompt('Почему работа не выполнялась?');
+    const reason = await askText('Почему работа не выполнялась?', '', '', 'Причина');
     if (reason === null) return;
     t.outcome = 'notdone'; t.reason = reason.trim() || 'не указана';
     await submit(t);
@@ -823,7 +881,7 @@ function renderForm(box, t, k) {
   // Испытание не проводилось — с причиной
   const skipBtn = $('#skipBtn'), unskipBtn = $('#unskipBtn');
   if (skipBtn) skipBtn.onclick = async () => {
-    const reason = prompt('Почему испытание не проводилось?');
+    const reason = await askText('Почему испытание не проводилось?', '', '', 'Причина');
     if (reason === null) return;
     it.skip = true; it.reason = reason.trim() || 'не указана';
     await save(); router();
@@ -859,7 +917,7 @@ function renderForm(box, t, k) {
     const dep = flatFields(wt, v).filter(x => x.memo?.includes(id));
     if (dep.length) { dep.forEach(d => { v[d.id] = ''; }); applyMemo(wt, v); dep.forEach(d => { const el = box.querySelector(`[data-f="${d.id}"]`); if (el) el.value = v[d.id] ?? ''; }); }
   };
-  const onInput = e => {
+  const onInput = async e => {
     const el = e.target, id = el.dataset.f;
     // Значения в списке с галочками
     if (el.dataset.clv) {
@@ -873,7 +931,7 @@ function renderForm(box, t, k) {
       if (!row) return;
       if (el.value === '__new') {
         const c = flatFields(wt, v).find(x => x.id === el.dataset.tv).cols.find(c => c.id === el.dataset.col);
-        const name = (prompt(c.ask || 'Название') || '').trim();
+        const name = (await askText(c.ask || 'Название') || '').trim();
         if (name) { addToList(c.store, [name]); row[el.dataset.col] = name; }
         redrawSecOf(el.dataset.tv);
       } else row[el.dataset.col] = el.value;
@@ -936,7 +994,7 @@ function renderForm(box, t, k) {
     const ca = e.target.closest('[data-cladd]');
     if (ca) {
       const f = flatFields(wt, v).find(x => x.id === ca.dataset.cladd);
-      const name = (prompt(f.ask || 'Что добавить?') || '').trim();
+      const name = (await askText(f.ask || 'Что добавить?') || '').trim();
       if (!name) return;
       addToList(f.store, [name]);
       const rows = rowsOf(v, f.id).slice();
@@ -1030,18 +1088,37 @@ function renderForm(box, t, k) {
 
 const autoWeatherDone = new Set();
 // Погода: место по телефону, а если не получилось — по населённому пункту (запоминается). Сервис Open-Meteo работает в России без VPN.
+const GEO_ERR = { 1: 'сайту запрещён доступ к местоположению (разрешите в браузере: значок замка у адреса → Местоположение)', 2: 'телефон не смог определить место', 3: 'телефон долго определял место' };
 const getPos = () => new Promise((res, rej) => {
   if (!navigator.geolocation) return rej(new Error('нет геолокации'));
-  navigator.geolocation.getCurrentPosition(p => res(p.coords), rej, { timeout: 10000, maximumAge: 1800000, enableHighAccuracy: false });
+  navigator.geolocation.getCurrentPosition(p => res(p.coords), e => rej(new Error(GEO_ERR[e.code] || 'место не определено')), { timeout: 15000, maximumAge: 3600000, enableHighAccuracy: false });
 });
-async function cityCoords(askAgain, quiet) {
+// Своё окошко для ввода города (системное окно на некоторых телефонах не появляется)
+// Своё окошко ввода текста: вернёт строку или null (Отмена)
+function askText(title, msg = '', value = '', placeholder = '') {
+  return new Promise(res => {
+    const d = document.createElement('div');
+    d.className = 'sheet-bg';
+    d.innerHTML = `<form class="sheet"><h3>${esc(title)}</h3>${msg ? `<p class="meta">${esc(msg)}</p>` : ''}
+      <input type="text" autocomplete="off" placeholder="${esc(placeholder)}" value="${esc(value)}">
+      <div class="actions"><button type="button" class="btn ghost" data-x>Отмена</button><button class="btn accent">Сохранить</button></div></form>`;
+    document.body.append(d);
+    const inp = d.querySelector('input');
+    setTimeout(() => inp.focus(), 60);
+    const done = v => { d.remove(); res(v); };
+    d.querySelector('[data-x]').onclick = () => done(null);
+    d.onclick = e => { if (e.target === d) done(null); };
+    d.querySelector('form').onsubmit = e => { e.preventDefault(); done(inp.value.trim()); };
+  });
+}
+async function cityCoords(askAgain, quiet, msg) {
   let city = askAgain ? '' : lsGet('weatherCity') || '';
   if (!city && quiet) throw new Error('нет города');
-  if (!city) city = (prompt('Не удалось определить место по телефону. Введите населённый пункт (например, Сургут):', lsGet('weatherCity') || '') || '').trim();
+  if (!city) city = (await askText('Населённый пункт для погоды', msg || 'Введите город или посёлок — он запомнится.', lsGet('weatherCity') || '', 'Например, Сургут') || '').trim();
   if (!city) throw new Error('Населённый пункт не указан. Введите погоду вручную');
   const g = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=ru&format=json`)).json();
   const p = g.results?.[0];
-  if (!p) { lsSet('weatherCity', ''); throw new Error(`Не нашли «${city}». Попробуйте ещё раз`); }
+  if (!p) throw new Error(`Не нашли «${city}». Проверьте название`);
   lsSet('weatherCity', city);
   return { latitude: p.latitude, longitude: p.longitude, place: p.name };
 }
@@ -1049,7 +1126,7 @@ async function fetchWeather(quiet) {
   if (!isOnline()) throw new Error('Нет интернета. Введите погоду вручную');
   let c, place = '';
   try { c = await getPos(); } catch (e) {
-    try { c = await cityCoords(false, quiet); place = c.place; } catch (err) {
+    try { c = await cityCoords(false, quiet, `Место не определилось: ${e.message}. Введите город или посёлок — он запомнится.`); place = c.place; } catch (err) {
       if (/Не нашли/.test(err.message)) throw err;
       throw new Error(err.message && !/fetch/i.test(err.message) ? err.message : 'Сервис погоды не ответил. Введите вручную');
     }
@@ -1091,7 +1168,7 @@ async function viewEdit(role, id) {
     <div id="tests"></div>
     <button type="button" class="btn ghost small" id="addTest">+ Добавить испытание</button>
     <div class="gap"></div>
-    <label class="field"><span class="lbl">Объект <b class="req">*</b></span><input name="object" value="${esc(t.object)}" autocomplete="off"></label>
+    <label class="field"><span class="lbl">Объект <b class="req">*</b></span><input name="object" value="${esc(t.object)}" autocomplete="off" placeholder="Начните вводить — появятся подсказки"></label>
     <label class="field"><span class="lbl">Адрес</span><input name="address" value="${esc(t.address)}" autocomplete="off"></label>
     <label class="field"><span class="lbl">Оборудование</span><input name="equipment" value="${esc(t.equipment)}" autocomplete="off"></label>
     <label class="field"><span class="lbl">Дата</span><input type="date" name="date" value="${esc(t.date)}"></label>
@@ -1122,7 +1199,7 @@ async function viewEdit(role, id) {
       <select data-pos="${esc(n)}"><option value="">— должность —</option>${[...new Set([...POSITIONS, staffPos(n)].filter(Boolean))].map(p => `<option ${p === staffPos(n) ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
       <button type="button" class="x" data-pdel="${esc(n)}" aria-label="Удалить">×</button></div>`).join('') : '<p class="hint">Список пуст.</p>') +
       '<button type="button" class="btn ghost small" id="addPerson">+ Добавить человека</button>';
-    $('#addPerson').onclick = () => { const n = (prompt('Фамилия и инициалы') || '').trim(); if (n) { addStaff([n]); drawPeople(); drawCrew(); } };
+    $('#addPerson').onclick = async () => { const n = (await askText('Новый человек', '', '', 'Фамилия и инициалы') || '').trim(); if (n) { addStaff([n]); drawPeople(); drawCrew(); } };
   };
   pplBox.onchange = e => { if (e.target.dataset.pos !== undefined) { setStaffPos(e.target.dataset.pos, e.target.value); toast('Должность сохранена'); } };
   pplBox.onclick = e => {
@@ -1150,11 +1227,11 @@ async function viewEdit(role, id) {
     items[i] = { type: e.target.value, values: {}, photos: [] };
   };
   // Выбор человека; «+ Новый человек…» спрашивает фамилию и добавляет в список
-  crewBox.onchange = e => {
+  crewBox.onchange = async e => {
     const s = e.target;
     let val = s.value;
     if (val === '__new') {
-      val = (prompt('Фамилия и инициалы') || '').trim();
+      val = (await askText('Новый человек', '', '', 'Фамилия и инициалы') || '').trim();
       if (val) addStaff([val]);
     }
     if (s.dataset.role) crew[s.dataset.role] = val;
@@ -1167,6 +1244,21 @@ async function viewEdit(role, id) {
     crew.members.splice(+i, 1); drawCrew();
   };
 
+  // Заявка, открытая с карточки куста
+  const pre = sessionStorage.getItem('prefillObject');
+  if (pre && !id) { sessionStorage.removeItem('prefillObject'); const o = JSON.parse(pre), f = $('#ef'); f.object.value = o.object; if (!f.address.value) f.address.value = o.address; }
+  // Объект: подсказки из справочника, кустов и прошлых заявок; выбор подставляет адрес
+  dbAll().then(all => {
+    const book = objBook();
+    for (const k of kusty()) if (!book['Куст ' + k.name]) book['Куст ' + k.name] = { address: k.field || '', equipment: '' };
+    for (const x of all) if (x.object && !book[x.object] && !(jget('objHidden', []).includes(x.object))) book[x.object] = { address: x.address || '', equipment: x.equipment || '' };
+    const f = $('#ef'); if (!f) return;
+    attachSuggest(f.object, () => Object.keys(book).filter(n => !jget('objHidden', []).includes(n)).sort((a, b) => a.localeCompare(b, 'ru', { numeric: true })), n => {
+      const b = book[n] || {};
+      if (b.address && !f.address.value) f.address.value = b.address;
+      if (b.equipment && !f.equipment.value) f.equipment.value = b.equipment;
+    }, n => { const bk = objBook(); delete bk[n]; lsSet('objBook', JSON.stringify(bk)); delete book[n]; lsSet('objHidden', JSON.stringify([...jget('objHidden', []), n])); });
+  });
   $('#ef').onsubmit = async e => {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(e.target));
@@ -1183,6 +1275,7 @@ async function viewEdit(role, id) {
       items: goodItems, crew
     };
     if (typesChanged && saved.status === 'new') saved.briefing = { checked: [] };
+    const book = objBook(); book[saved.object] = { address: saved.address, equipment: saved.equipment }; lsSet('objBook', JSON.stringify(book));
     addStaff(crewNames(saved));
     await dbPut(saved);
     toast(id ? 'Заявка сохранена' : 'Заявка создана');
@@ -1427,7 +1520,8 @@ async function viewPaper(id, kk) {
   await loadPaperDevices();
   const it = t.items[k];
   app.innerHTML = (it.skip ? '<div class="banner warn">Это испытание не выполнялось.</div>' : paperHTML(t, it, k)) +
-    '<button class="btn no-print" onclick="window.print()">Печать или сохранить в PDF</button>';
+    shareBtnHTML() + '<div class="gap"></div><button class="btn no-print" onclick="window.print()">Печать или сохранить в PDF</button>';
+  app.querySelector('[data-share]').onclick = () => shareProtocol(t);
 }
 // Настройки бланка
 function viewSettings() {
@@ -1634,11 +1728,21 @@ async function viewDevices(role) {
   const loose = getList('devices').filter(n => !known.has(n));
   app.innerHTML = `<a class="btn accent" href="#/${role}/device/new">+ Добавить прибор</a><div class="gap"></div>
     ${devs.map(d => { const [c, t] = verState(d);
-      return `<a class="card task" href="#/${role}/device/${d.id}"><div class="top-line"><span>${d.next ? 'Очередная поверка: ' + fmtDate(d.next) : 'Дата поверки не указана'}</span>
+      return `<div class="card dev-c"><button type="button" class="del-x" data-ddel="${d.id}" aria-label="Удалить прибор">${icon('trash')}</button><a class="task" href="#/${role}/device/${d.id}"><div class="top-line"><span>${d.next ? 'Очередная поверка: ' + fmtDate(d.next) : 'Дата поверки не указана'}</span>
         ${c ? `<span class="badge ${c === 'ok' ? 'st-sent' : c === 'warn' ? 'st-pending' : 'st-not'}">${t}</span>` : ''}</div>
         <div class="obj">${esc(devLabel(d))}</div><p class="meta">${[d.range && 'Диапазон: ' + esc(d.range), d.acc && 'Точность: ' + esc(d.acc), d.cert && 'Свидетельство № ' + esc(d.cert)].filter(Boolean).join('<br>')}</p>
-        ${d.files?.length ? `<p class="meta">📎 Файлов: ${d.files.length}</p>` : ''}</a>`; }).join('') || '<div class="card meta">Приборов пока нет.</div>'}
-    ${loose.length ? `<h3 class="mt">Есть в протоколах, но без данных поверки</h3>${loose.map(n => `<a class="card task" href="#/${role}/device/new?${encodeURIComponent(n)}"><div class="obj">${esc(n)}</div><p class="meta">Нажмите, чтобы заполнить</p></a>`).join('')}` : ''}`;
+        ${d.files?.length ? `<p class="meta">📎 Файлов: ${d.files.length}</p>` : ''}</a></div>`; }).join('') || '<div class="card meta">Приборов пока нет.</div>'}
+    ${loose.length ? `<h3 class="mt">Есть в протоколах, но без данных поверки</h3>${loose.map((n, i) => `<div class="card dev-c"><button type="button" class="del-x" data-ldel="${i}" aria-label="Удалить из списка">${icon('trash')}</button><a class="task" href="#/${role}/device/new?${encodeURIComponent(n)}"><div class="obj">${esc(n)}</div><p class="meta">Нажмите, чтобы заполнить</p></a></div>`).join('')}` : ''}`;
+  app.querySelectorAll('[data-ddel]').forEach(b => b.onclick = async () => {
+    const d = devs.find(x => x.id === b.dataset.ddel);
+    if (!confirm(`Удалить прибор «${devLabel(d)}»?`)) return;
+    removeFromList('devices', devLabel(d)); await docDel(d.id); toast('Прибор удалён'); viewDevices(role);
+  });
+  app.querySelectorAll('[data-ldel]').forEach(b => b.onclick = () => {
+    const n = loose[+b.dataset.ldel];
+    if (!confirm(`Убрать «${n}» из списка приборов?`)) return;
+    removeFromList('devices', n); toast('Убрано из списка'); viewDevices(role);
+  });
 }
 async function viewDeviceEdit(role, id) {
   const [rid, preset] = String(id).split('?');
@@ -1711,7 +1815,7 @@ document.addEventListener('touchend', e => {
 function router() {
   const p = (location.hash.slice(1) || '/').split('/').filter(Boolean);
   window.scrollTo(0, 0);
-  currentFormId = null; swipeNav = null;
+  currentFormId = null; swipeNav = null; app.onchange = null; app.onclick = null;
   if (!p.length) return viewRoles();
   if (p[0] === 'h') {
     if (p[1] === 'docnew') return viewDocEdit(p[2], null, 'h');
@@ -1726,6 +1830,14 @@ function router() {
     if (p[1] === 'games') return viewGames(p[0], p[2]);
     if (p[1] === 'quiz') return viewQuiz(p[0]);
     if (p[1] === 'rating') return viewRating(p[0]);
+    if (p[1] === 'people') return viewPeople(p[0]);
+    if (p[1] === 'phones') return viewPhones(p[0]);
+    if (p[1] === 'phone') return viewPhone(p[0], p[2]);
+    if (p[1] === 'phoneimport') return viewPhoneImport(p[0]);
+    if (p[1] === 'kusty') return viewKusty(p[0]);
+    if (p[1] === 'kust') return viewKust(p[0], p[2]);
+    if (p[1] === 'kustimport') return viewKustImport(p[0]);
+    if (p[1] === 'reglament') return viewReglament(p[0]);
   }
   if (p[0] === 'e') {
     if (p[1] === 'tb') return p[2] === 'groups' ? viewTBGroups() : p[2] !== undefined ? viewTBChapter(+p[2], p[3]) : viewTB();
@@ -1755,5 +1867,6 @@ function router() {
   counts();
   router();
   syncPending();
+  checkBirthdays();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
