@@ -62,8 +62,8 @@ const quizDoneBy = (name, w = weekNo()) => quizResults().some(r => r.week === w 
 const quizPending = () => quizDoneBy(lsGet('me') || '') ? 0 : 1;
 function quizCardHTML(role) {
   const res = quizResults().filter(r => r.week === weekNo());
-  if (role === 'b') return `<div class="card"><h3>🧠 Тест недели</h3>${res.length ? '<ul class="acks">' + res.map(r => `<li>${esc(r.name || 'без фамилии')}: <b>${r.score} из ${r.total}</b> — ${fmtDT(r.at)}</li>`).join('') + '</ul>' : '<p class="meta">На этой неделе тест ещё никто не прошёл.</p>'}
-    <a class="btn ghost small" href="#/b/quiz">Посмотреть вопросы</a></div>`;
+  // Тест — для саморазвития: результаты видит только сам монтёр
+  if (role === 'b') return '';
   const mine = res.find(r => r.name === (lsGet('me') || ''));
   return `<a class="card task quiz-card" href="#/e/quiz"><div class="top-line"><span>🧠 Тест недели · 7 вопросов</span>
     <span class="badge ${mine ? 'st-sent' : 'st-pending'}">${mine ? `${mine.score} из ${mine.total}` : 'Новый'}</span></div>

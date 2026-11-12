@@ -1465,10 +1465,11 @@ async function viewDocs(role, kind) {
     if (role === 'e') { const done = ackedBy(d, me()), late = !done && d.due && d.due < today();
       return `<span class="badge ${done ? 'st-sent' : late ? 'st-not' : 'st-new'}">${done ? 'Ознакомлен' : late ? 'Срок прошёл' : 'Не прочитано'}</span>`; }
     const n = acksOf(d).filter(a => a.name).length;
-    return `<span class="badge ${people.length && n >= people.length ? 'st-sent' : 'st-new'}">Ознакомились: ${n}${people.length ? ' из ' + people.length : ''}</span>`;
+    const all = people.length && n >= people.length, late = !all && d.due && d.due < today();
+    return `<span class="badge ${all ? 'st-sent' : late ? 'st-not' : 'st-new'}">${late ? 'Срок прошёл · ' : ''}Ознакомились: ${n}${people.length ? ' из ' + people.length : ''}</span>`;
   };
   app.innerHTML = `${role === 'b' ? `<a class="btn accent" href="#/b/docnew/${kind}">+ Добавить ${one}</a><div class="gap"></div>` : ''}
-    ${kind === 'info' && role === 'b' ? '<div id="quizCard"></div>' : ''}${kind === 'info' && role === 'e' ? '<div id="quizCard"></div><p class="meta">Откройте каждый документ и нажмите «Ознакомлен».</p><div class="gap"></div>' : ''}
+    ${kind === 'info' && role === 'e' ? '<div id="quizCard"></div><p class="meta">Откройте каждый документ и нажмите «Ознакомлен».</p><div class="gap"></div>' : ''}
     ${docs.map(d => `<a class="card task" href="#/${role}/doc/${d.id}">
       <div class="top-line"><span>${fmtDate(d.created)}${d.due ? ' · до ' + fmtDate(d.due) : ''}</span>${kind === 'info' ? infoBadge(d) : ''}</div>
       <div class="obj">${esc(d.title)}</div>
@@ -1532,16 +1533,18 @@ async function viewDoc(role, id) {
   const acks = acksOf(d), staff = getStaff();
   const people = staff.filter(n => !/начальник/i.test(staffPos(n)));
   const notYet = people.filter(n => !acks.some(a => a.name === n));
+  const late = d.due && d.due < today();
   let ackHTML = '';
   if (d.kind === 'info') {
-    const list = acks.length ? '<ul class="acks">' + acks.map(a => `<li>✓ ${esc(a.name || 'без фамилии')} — ${fmtDT(a.at)}</li>`).join('') + '</ul>' : '<p class="meta">Пока никто не ознакомился.</p>';
-    if (role === 'b') ackHTML = `<div class="card"><h3>Ознакомились</h3>${list}${notYet.length ? `<h3 class="mt">Ещё не ознакомились</h3><p>${esc(notYet.join(', '))}</p>` : ''}</div>`;
+    // Ознакомился позже срока — помечаем
+    const afterDue = a => d.due && new Date(a.at).toISOString().slice(0, 10) > d.due;
+    const list = acks.length ? '<ul class="acks">' + acks.map(a => `<li class="${afterDue(a) ? 'txt-bad' : ''}">✓ ${esc(a.name || 'без фамилии')} — ${fmtDT(a.at)}${afterDue(a) ? ' (после срока)' : ''}</li>`).join('') + '</ul>' : '<p class="meta">Пока никто не ознакомился.</p>';
+    if (role === 'b') ackHTML = `<div class="card"><h3>Ознакомились</h3>${list}${notYet.length ? `<h3 class="mt ${late ? 'txt-bad' : ''}">${late ? 'Срок прошёл, не ознакомились' : 'Ещё не ознакомились'}</h3><p>${esc(notYet.join(', '))}</p>` : ''}</div>`;
     else ackHTML = ackedBy(d, me()) && me() ? `<div class="banner ok">${esc(me())}: ознакомлен ${fmtDT(acks.find(a => a.name === me())?.at)}.</div>`
       : `<div class="card"><label class="field"><span class="lbl">Кто ознакомился</span><select id="ackName"><option value="">— выберите себя —</option>${
         staff.map(n => `<option ${n === me() ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
         <button class="btn accent" id="ackBtn">Ознакомлен</button></div>`;
   }
-  const late = d.due && d.due < today();
   app.innerHTML = `<div class="card tb-text"><h2>${esc(d.title)}</h2><p class="meta">${fmtDate(d.created)}${d.due ? ` · <b class="${late ? 'txt-bad' : ''}">ознакомиться до ${fmtDate(d.due)}</b>` : ''}</p>
     ${d.text ? paras(d.text) : ''}
     ${(d.files || []).map((f, i) => f.type?.startsWith('image/') ? `<img class="doc-img" src="${f.data}" alt="${esc(f.name)}">`
