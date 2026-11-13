@@ -1726,13 +1726,17 @@ async function viewDevices(role) {
   const devs = (await docsAll()).filter(d => d.kind === 'device').sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   const known = new Set(devs.map(devLabel));
   const loose = getList('devices').filter(n => !known.has(n));
+  const missing = DEVICE_PRESET.filter(p => !known.has(devLabel(p))).length;
   app.innerHTML = `<a class="btn accent" href="#/${role}/device/new">+ Добавить прибор</a><div class="gap"></div>
+    ${missing ? `<button class="btn ghost" id="devPreset">Добавить приборы из наших протоколов (${missing})</button><div class="gap"></div>` : ''}
     ${devs.map(d => { const [c, t] = verState(d);
       return `<div class="card dev-c"><button type="button" class="del-x" data-ddel="${d.id}" aria-label="Удалить прибор">${icon('trash')}</button><a class="task" href="#/${role}/device/${d.id}"><div class="top-line"><span>${d.next ? 'Очередная поверка: ' + fmtDate(d.next) : 'Дата поверки не указана'}</span>
-        ${c ? `<span class="badge ${c === 'ok' ? 'st-sent' : c === 'warn' ? 'st-pending' : 'st-not'}">${t}</span>` : ''}</div>
+        ${c ? `<span class="badge ${c === 'ok' ? 'st-sent' : c === 'warn' ? 'st-pending' : 'st-over'}">${t}</span>` : ''}</div>
         <div class="obj">${esc(devLabel(d))}</div><p class="meta">${[d.range && 'Диапазон: ' + esc(d.range), d.acc && 'Точность: ' + esc(d.acc), d.cert && 'Свидетельство № ' + esc(d.cert)].filter(Boolean).join('<br>')}</p>
         ${d.files?.length ? `<p class="meta">📎 Файлов: ${d.files.length}</p>` : ''}</a></div>`; }).join('') || '<div class="card meta">Приборов пока нет.</div>'}
     ${loose.length ? `<h3 class="mt">Есть в протоколах, но без данных поверки</h3>${loose.map((n, i) => `<div class="card dev-c"><button type="button" class="del-x" data-ldel="${i}" aria-label="Удалить из списка">${icon('trash')}</button><a class="task" href="#/${role}/device/new?${encodeURIComponent(n)}"><div class="obj">${esc(n)}</div><p class="meta">Нажмите, чтобы заполнить</p></a></div>`).join('')}` : ''}`;
+  const dp = $('#devPreset');
+  if (dp) dp.onclick = async () => { const n = await addPresetDevices(); toast(`Добавлено приборов: ${n}`); counts(); viewDevices(role); };
   app.querySelectorAll('[data-ddel]').forEach(b => b.onclick = async () => {
     const d = devs.find(x => x.id === b.dataset.ddel);
     if (!confirm(`Удалить прибор «${devLabel(d)}»?`)) return;

@@ -325,3 +325,25 @@ function viewPhoneImport(role) {
     savePhones(list); toast(`Добавлено: ${added}${upd ? `, обновлено: ${upd}` : ''}`); location.hash = `/${role}/phones`;
   };
 }
+
+// ===================== Приборы из образцов протоколов =====================
+// Выписаны из таблиц «Перечень применяемых средств измерения» в присланных протоколах.
+const DEVICE_PRESET = [
+  { name: 'Мегаомметр Е6-24', no: '23772', range: '250 кОм – 300 ГОм', acc: '1 %', cert: 'С-АХД/20-01-2026/499881362', date: '2026-01-20', next: '2027-01-19' },
+  { name: 'Установка испытательная СВИ-100/140', no: '', range: '1–100 кВ', acc: '2 %', cert: 'С-ДЭН/27-11-2025-484082537', date: '2025-11-27', next: '2027-11-26' },
+  { name: 'Миллиомметр ПТФ-1', no: '4419', range: '0,1 мкОм – 2000 Ом', acc: '1 %', cert: 'С-АХД/20-01-2025/406524643', date: '2026-01-20', next: '2027-01-19' },
+  { name: 'Микроомметр ИКС-30А', no: '434', range: '1 мкОм – 100 кОм', acc: '0,1 %', cert: 'С-ГА/27-10-2023/291206404', date: '2023-10-27', next: '2028-10-27' },
+  { name: 'Измеритель параметров заземляющих устройств KEW 6016', no: '8334063', range: '0–2000 Ом', acc: '±2 %', cert: 'С-ВЯ/07-04-2026/517665849', date: '2026-04-07', next: '2027-04-06' },
+  { name: 'Измеритель петли фаза-нуль MPI-530', no: 'АН7709', range: '', acc: '±2 %', cert: 'С-ВВО/17-10-2025/474838401', date: '2025-10-17', next: '2026-10-16' },
+  { name: 'Высоковольтная установка АИД-70', no: '2339', range: '0–70 кВ', acc: '3 %', cert: '3226282/2039/1', date: '2025-11-05', next: '2026-11-04' }
+];
+async function addPresetDevices() {
+  const have = new Set((await docsAll()).filter(d => d.kind === 'device').map(d => devLabel(d)));
+  let n = 0;
+  for (const [i, p] of DEVICE_PRESET.entries()) {
+    if (have.has(devLabel(p))) continue;
+    await docPut({ ...p, id: 'vp' + Date.now() + i, kind: 'device', created: Date.now(), files: [] });
+    addToList('devices', [devLabel(p)]); n++;
+  }
+  return n;
+}
