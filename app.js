@@ -1168,6 +1168,8 @@ async function viewEdit(role, id) {
     <div id="tests"></div>
     <button type="button" class="btn ghost small" id="addTest">+ Добавить испытание</button>
     <div class="gap"></div>
+    <span class="lbl">Приборы</span><p class="hint" id="devHint"></p><div id="devBox" class="dev-pick"></div>
+    <div class="gap"></div>
     <label class="field"><span class="lbl">Объект <b class="req">*</b></span><input name="object" value="${esc(t.object)}" autocomplete="off" placeholder="Начните вводить — появятся подсказки"></label>
     <label class="field"><span class="lbl">Адрес</span><input name="address" value="${esc(t.address)}" autocomplete="off"></label>
     <label class="field"><span class="lbl">Оборудование</span><input name="equipment" value="${esc(t.equipment)}" autocomplete="off"></label>
@@ -1213,18 +1215,44 @@ async function viewEdit(role, id) {
   drawTests(); drawCrew(); drawPeople();
   const hasData = it => Object.values(it.values || {}).some(x => String(x).trim()) || it.photos?.length;
 
+  // Приборы: отмечаются сами по видам испытаний, пока человек не поменял выбор вручную
+  let allDevs = [], devAuto = !t.devices || !!t.devAuto;
+  const devSel = new Set(t.devices || []);
+  const devBox = $('#devBox'), devHint = $('#devHint');
+  const autoPick = () => devicesForTypes(allDevs, items.map(i => i.type).filter(Boolean)).map(devLabel);
+  const drawDevs = () => {
+    if (devAuto) { devSel.clear(); autoPick().forEach(n => devSel.add(n)); }
+    const names = [...new Set([...allDevs.map(devLabel), ...devSel])];
+    devHint.innerHTML = !allDevs.length ? 'Приборов нет. Добавьте их в разделе «Приборы».'
+      : devAuto ? 'Отмечены сами по выбранным испытаниям. Можно поменять.'
+      : 'Выбраны вручную. <button type="button" class="linkish" id="devReauto">Подобрать по испытаниям</button>';
+    devBox.innerHTML = names.map(n => {
+      const d = allDevs.find(x => devLabel(x) === n), [c, st] = d ? verState(d) : [];
+      return `<label class="cl-row ${devSel.has(n) ? 'on' : ''}"><span class="cl-check"><input type="checkbox" data-dev="${esc(n)}" ${devSel.has(n) ? 'checked' : ''}><span>${esc(n)}
+        ${d?.roles?.length ? `<small class="dev-r">${d.roles.map(devRoleName).join(', ')}</small>` : ''}
+        ${c === 'bad' || c === 'warn' ? `<small class="dev-bad ${c}">${esc(st)}</small>` : ''}</span></span></label>`;
+    }).join('');
+    const ra = $('#devReauto'); if (ra) ra.onclick = () => { devAuto = true; drawDevs(); };
+  };
+  devBox.onchange = e => {
+    const n = e.target.dataset.dev; if (n === undefined) return;
+    devAuto = false; e.target.checked ? devSel.add(n) : devSel.delete(n); drawDevs();
+  };
+  docsAll().then(all => { allDevs = all.filter(d => d.kind === 'device').sort((a, b) => a.name.localeCompare(b.name, 'ru')); drawDevs(); });
+
   $('#addTest').onclick = () => { items.push({ type: '', values: {}, photos: [] }); drawTests(); };
   testsBox.onclick = e => {
     const i = e.target.dataset.tdel;
     if (i === undefined) return;
     if (hasData(items[i]) && !confirm('В этом протоколе уже есть данные. Убрать испытание вместе с ними?')) return;
-    items.splice(+i, 1); drawTests();
+    items.splice(+i, 1); drawTests(); drawDevs();
   };
   testsBox.onchange = e => {
     const i = e.target.dataset.ti;
     if (i === undefined) return;
     if (hasData(items[i]) && !confirm('В этом протоколе уже есть данные. Сменить испытание? Данные удалятся.')) { drawTests(); return; }
     items[i] = { type: e.target.value, values: {}, photos: [] };
+    drawDevs();
   };
   // Выбор человека; «+ Новый человек…» спрашивает фамилию и добавляет в список
   crewBox.onchange = async e => {
@@ -1272,8 +1300,16 @@ async function viewEdit(role, id) {
     const saved = {
       ...(old || { id: 't' + Date.now(), number: nextNo, created: Date.now(), status: 'new', briefing: { checked: [] } }),
       object: fd.object.trim(), address: fd.address.trim(), equipment: fd.equipment.trim(), date: fd.date, comment: fd.comment.trim(),
-      items: goodItems, crew
+      items: goodItems, crew, devices: [...devSel], devAuto
     };
+    // В каждый протокол — только подходящие этому испытанию приборы (если там ещё пусто)
+    for (const it of goodItems) {
+      it.values = it.values || {};
+      if (rowsOf(it.values, 'devices').length) continue;
+      const roles = rolesForType(WORK_TYPES[it.type]);
+      const fit = [...devSel].filter(n => { const d = allDevs.find(x => devLabel(x) === n); return !d?.roles?.length || d.roles.some(r => roles.includes(r)); });
+      if (fit.length) it.values.devices = fit.map(name => ({ name }));
+    }
     if (typesChanged && saved.status === 'new') saved.briefing = { checked: [] };
     const book = objBook(); book[saved.object] = { address: saved.address, equipment: saved.equipment }; lsSet('objBook', JSON.stringify(book));
     addStaff(crewNames(saved));
@@ -1723,6 +1759,12 @@ async function viewDoc(role, id) {
 const devLabel = d => [d.name, d.no ? '№ ' + d.no : ''].filter(Boolean).join(' ');
 async function viewDevices(role) {
   header('Приборы', homeOf(role));
+  // Один раз исправляем данные приборов по паспортам и описаниям типа
+  if (lsGet('devPresetV') !== '2') {
+    lsSet('devPresetV', '2');
+    const r = await addPresetDevices();
+    if (r.added + r.fixed) toast(`Данные приборов исправлены по паспортам: ${r.added + r.fixed}`);
+  }
   const devs = (await docsAll()).filter(d => d.kind === 'device').sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   const known = new Set(devs.map(devLabel));
   const loose = getList('devices').filter(n => !known.has(n));
@@ -1733,10 +1775,12 @@ async function viewDevices(role) {
       return `<div class="card dev-c"><button type="button" class="del-x" data-ddel="${d.id}" aria-label="Удалить прибор">${icon('trash')}</button><a class="task" href="#/${role}/device/${d.id}"><div class="top-line"><span>${d.next ? 'Очередная поверка: ' + fmtDate(d.next) : 'Дата поверки не указана'}</span>
         ${c ? `<span class="badge ${c === 'ok' ? 'st-sent' : c === 'warn' ? 'st-pending' : 'st-over'}">${t}</span>` : ''}</div>
         <div class="obj">${esc(devLabel(d))}</div><p class="meta">${[d.range && 'Диапазон: ' + esc(d.range), d.acc && 'Точность: ' + esc(d.acc), d.cert && 'Свидетельство № ' + esc(d.cert)].filter(Boolean).join('<br>')}</p>
+        ${d.roles?.length ? `<div class="dev-roles">${d.roles.map(r => `<span>${esc(devRoleName(r))}</span>`).join('')}</div>` : ''}
+        ${d.src ? `<p class="meta dev-src">Источник: ${esc(d.src)}</p>` : ''}
         ${d.files?.length ? `<p class="meta">📎 Файлов: ${d.files.length}</p>` : ''}</a></div>`; }).join('') || '<div class="card meta">Приборов пока нет.</div>'}
     ${loose.length ? `<h3 class="mt">Есть в протоколах, но без данных поверки</h3>${loose.map((n, i) => `<div class="card dev-c"><button type="button" class="del-x" data-ldel="${i}" aria-label="Удалить из списка">${icon('trash')}</button><a class="task" href="#/${role}/device/new?${encodeURIComponent(n)}"><div class="obj">${esc(n)}</div><p class="meta">Нажмите, чтобы заполнить</p></a></div>`).join('')}` : ''}`;
   const dp = $('#devPreset');
-  if (dp) dp.onclick = async () => { const n = await addPresetDevices(); toast(`Добавлено приборов: ${n}`); counts(); viewDevices(role); };
+  if (dp) dp.onclick = async () => { const n = (await addPresetDevices()).added; toast(`Добавлено приборов: ${n}`); counts(); viewDevices(role); };
   app.querySelectorAll('[data-ddel]').forEach(b => b.onclick = async () => {
     const d = devs.find(x => x.id === b.dataset.ddel);
     if (!confirm(`Удалить прибор «${devLabel(d)}»?`)) return;
@@ -1760,6 +1804,9 @@ async function viewDeviceEdit(role, id) {
     ${fld('no', 'Заводской номер', d.no)}
     ${fld('range', 'Диапазон измерений', d.range)}
     ${fld('acc', 'Класс точности, погрешность', d.acc)}
+    <span class="lbl">Что измеряет (по этому прибор сам подбирается в заявку)</span>
+    <div class="dev-rchk">${DEV_ROLES.map(([k, l]) => `<label class="cl-check"><input type="checkbox" data-droll="${k}" ${(d.roles || []).includes(k) ? 'checked' : ''}><span>${esc(l)}</span></label>`).join('')}</div>
+    ${fld('src', 'Откуда данные (паспорт, руководство)', d.src)}
     ${fld('cert', '№ свидетельства о поверке', d.cert)}
     ${fld('date', 'Дата последней поверки', d.date, 'date')}
     ${fld('next', 'Дата очередной поверки', d.next, 'date')}
@@ -1786,7 +1833,8 @@ async function viewDeviceEdit(role, id) {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(e.target));
     if (!fd.name.trim()) { toast('Укажите наименование'); return; }
-    const nd = { ...(old || { id: 'v' + Date.now(), kind: 'device', created: Date.now() }), ...Object.fromEntries(Object.entries(fd).map(([k, x]) => [k, x.trim()])), files };
+    const nd = { ...(old || { id: 'v' + Date.now(), kind: 'device', created: Date.now() }), ...Object.fromEntries(Object.entries(fd).map(([k, x]) => [k, x.trim()])), files,
+      roles: [...e.target.querySelectorAll('[data-droll]:checked')].map(c => c.dataset.droll) };
     if (old && devLabel(old) !== devLabel(nd)) removeFromList('devices', devLabel(old));
     if (preset) removeFromList('devices', decodeURIComponent(preset));
     addToList('devices', [devLabel(nd)]);

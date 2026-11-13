@@ -1538,3 +1538,13 @@ textarea#kt { width: 100%; font: inherit; font-size: 14px; padding: 10px; border
 .ph-nums { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .ph-num { background: var(--accent-soft); color: #0f5aa6; font-weight: 700; text-decoration: none; padding: 8px 12px; border-radius: 12px; font-size: 15px; }
 .ph-count { margin: 10px 2px 8px; }
+
+/* Приборы: что измеряет, источник, выбор в заявке */
+.dev-roles { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.dev-roles span { background: var(--accent-soft); color: var(--brand); font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 10px; }
+.dev-src { font-size: 12px; margin-top: 6px; }
+.dev-rchk { display: grid; gap: 4px; margin: 6px 0 12px; }
+.dev-pick .cl-row { display: block; }
+.dev-pick small { display: block; font-size: 12px; color: var(--muted, #64748b); font-weight: 400; margin-top: 2px; }
+.dev-pick small.dev-bad { color: #c62828; font-weight: 700; }
+.dev-pick small.dev-bad.warn { color: #b26a00; }

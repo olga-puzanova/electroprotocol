@@ -70,7 +70,7 @@ const PROTO_SECTION = {
   ]
 };
 // Эти поля копируются из одного протокола заявки в другие (номер протокола — следующим номером)
-const SHARED_FIELDS = ['proto_date', 'permit', 'place', 'mode', 'devices', 'temp_air', 'humidity', 'pressure'];
+const SHARED_FIELDS = ['proto_date', 'permit', 'place', 'mode', 'temp_air', 'humidity', 'pressure'];
 
 // ===== Перечень испытаний по ПУЭ 7-го изд., гл. 1.8 (в том же порядке и с теми же названиями) =====
 const PUE = [
