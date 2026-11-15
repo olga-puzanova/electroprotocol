@@ -663,9 +663,7 @@ async function viewTask(id, tab, k) {
         <a class="btn ghost small" href="#/e/edit/${id}">✎ Изменить</a>
         <button class="btn ghost small danger" id="delBtn">Удалить</button>
         ${t.status !== 'new' ? `<button class="btn ghost small wide share-btn" data-share>${icon('send')} Отправить в мессенджер</button>` : ''}
-        ${t.status === 'sent'
-          ? `<button class="btn ghost small wide" id="reopenBtn">Вернуть в работу</button>`
-          : t.status !== 'pending' ? `<button class="btn ghost small wide" id="notDoneBtn">Вся заявка не выполнялась</button>` : ''}
+        ${t.status === 'sent' ? `<button class="btn ghost small wide" id="reopenBtn">Вернуть в работу</button>` : ''}
       </div>
     </div>
     <nav class="tabs">${tabs.map(([key, l]) => `<a href="#/e/task/${id}/${key}" class="${key === tab ? 'active' : ''}">${l}</a>`).join('')}</nav>
@@ -682,13 +680,6 @@ async function viewTask(id, tab, k) {
     if (t.status === 'briefed') t.status = 'draft';
     await dbPut(t); router();
   });
-  const nd = $('#notDoneBtn');
-  if (nd) nd.onclick = async () => {
-    const reason = await askText('Почему работа не выполнялась?', '', '', 'Причина');
-    if (reason === null) return;
-    t.outcome = 'notdone'; t.reason = reason.trim() || 'не указана';
-    await submit(t);
-  };
   const ro = $('#reopenBtn');
   if (ro) ro.onclick = async () => {
     if (!confirm('Вернуть заявку в работу? Протоколы можно будет исправить и отправить заново.')) return;
