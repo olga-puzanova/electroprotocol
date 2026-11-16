@@ -221,40 +221,8 @@ function viewReglament(role) {
 }
 
 // ===================== Отправка протокола в мессенджер =====================
-// Файл протокола (откроется на любом телефоне и распечатается) + короткий текст.
-async function protocolFile(t) {
-  await loadPaperDevices();
-  let css = '';
-  try { css = await (await fetch('styles.css')).text(); } catch (e) {}
-  const items = t.items.map((it, k) => [it, k]).filter(([it]) => !it.skip);
-  const body = t.outcome === 'notdone' ? `<p>Заявка ${esc(t.number)}, ${esc(t.object)}: работа не выполнялась. Причина: ${esc(t.reason || '')}</p>`
-    : items.map(([it, k]) => paperHTML(t, it, k)).join('<div style="page-break-after:always;height:24px"></div>');
-  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Протокол — ${esc(t.object)}</title>
-    <style>${css}\nbody{background:#fff}main{padding:12px}.no-print{display:none}</style></head><body><main>${body}</main></body></html>`;
-  const safe = s => String(s).replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '_').slice(0, 40);
-  return new File([html], `Протокол_${safe(t.number)}_${safe(t.object)}.html`, { type: 'text/html' });
-}
-function protocolText(t) {
-  const lines = [`Заявка ${t.number} · ${t.object}${t.date ? ' · ' + fmtDate(t.date) : ''}`];
-  if (t.outcome === 'notdone') lines.push(`Работа не выполнялась. Причина: ${t.reason || 'не указана'}`);
-  else t.items.forEach(it => lines.push(`• ${typeName(it.type)}${it.skip ? ' — не проводилось' : it.values.proto_no ? ` — протокол № ${it.values.proto_no}` : ''}${!it.skip && it.values.conclusion ? (isFit(it.values) ? ' — годно' : ' — НЕ ГОДНО') : ''}`));
-  lines.push('Протокол во вложении (открывается в браузере, можно распечатать).');
-  return lines.join('\n');
-}
-async function shareProtocol(t) {
-  const text = protocolText(t);
-  let file = null;
-  try { file = await protocolFile(t); } catch (e) {}
-  try {
-    if (file && navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: `Заявка ${t.number}`, text }); return; }
-    if (navigator.share) { await navigator.share({ title: `Заявка ${t.number}`, text }); toast('Отправлен текст. Файл этот телефон приложить не дал'); return; }
-  } catch (e) { if (e.name === 'AbortError') return; }
-  // Компьютер или старый телефон: скачиваем файл и копируем текст
-  if (file) { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
-  try { await navigator.clipboard.writeText(text); } catch (e) {}
-  toast('Файл сохранён, текст скопирован — вставьте в Telegram или MAX');
-}
-const shareBtnHTML = () => `<button type="button" class="btn ghost share-btn" data-share>${icon('send')} Отправить в мессенджер</button>`;
+// PDF и системная отправка реализованы в pdf-export.js.
+const shareBtnHTML = () => `<button type="button" class="btn ghost share-btn" data-share>${icon('send')} Отправить PDF в мессенджер</button>`;
 
 // ===================== Телефонный справочник =====================
 // Все рабочие контакты (не только монтёры): ФИО, должность, подразделение, телефоны. Нажал на номер — звонок.
@@ -350,11 +318,13 @@ const DEV_FOR_TYPE = {
   '1.8.33': ['megger', 'hv'], '1.8.34': ['megger', 'hv'], '1.8.35': ['megger', 'hv'], '1.8.36': [],
   '1.8.37': ['megger', 'loop'], '1.8.38': ['megger'], '1.8.39': ['earth', 'loop'], '1.8.40': ['megger', 'hv_dc'], '1.8.41': ['megger']
 };
-const DEV_ROLE_SHORT = { megger: 'изоляция', hv: 'повышенное ~', hv_dc: 'выпрямленное', wind: 'обмотки', contact: 'контакты', earth: 'заземление', loop: 'петля Ф-0' };
+const DEV_ROLE_SHORT = { megger: 'Измерение сопротивления изоляции', hv: 'Испытание повышенным переменным напряжением', hv_dc: 'Испытание повышенным выпрямленным напряжением', wind: 'Измерение сопротивления обмоток постоянному току', contact: 'Измерение переходного сопротивления контактов', earth: 'Измерение сопротивления заземления', loop: 'Измерение петли «фаза-нуль»', impulse: 'Испытание импульсным напряжением' };
 const devRoleName = r => DEV_ROLE_SHORT[r] || r;
 // Роли для вида испытания (wt — запись из WORK_TYPES, у неё есть номер пункта ПУЭ code)
 function rolesForType(wt) {
   if (!wt) return [];
+  if (wt.deviceRoles) return wt.deviceRoles;
+  if (!wt.code) return [];
   return DEV_FOR_TYPE[wt.code] || ['megger'];
 }
 // Приборы, которые нужны для набора испытаний (ключи WORK_TYPES)

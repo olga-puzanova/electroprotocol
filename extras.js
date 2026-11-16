@@ -102,10 +102,10 @@ function viewRating(role) {
 }
 function quizCardHTML(role) {
   const res = quizResults().filter(r => r.week === weekNo());
-  if (role === 'b') return `<div class="card"><h3>🧠 Тест недели — результаты</h3>${res.length ? res.map(r => `<details class="qres"><summary>${medal(r.score, r.total)} <b>${esc(r.name)}</b>: верно ${r.score}, неверно ${r.total - r.score} · ${fmtDT(r.at)}</summary>
+  if (role === 'b' || role === 'm') return `<div class="card"><h3>🧠 Тест недели — результаты</h3>${res.length ? res.map(r => `<details class="qres"><summary>${medal(r.score, r.total)} <b>${esc(r.name)}</b>: верно ${r.score}, неверно ${r.total - r.score} · ${fmtDT(r.at)}</summary>
       ${(r.wrong || []).length ? `<p class="meta">Подтянуть:</p><ol>${r.wrong.map(qi => `<li>${esc(QUIZ[qi][0])}<br><span class="meta">Верно: ${esc(QUIZ[qi][1][QUIZ[qi][2]])}. ${esc(QUIZ[qi][3])}</span></li>`).join('')}</ol>` : '<p class="meta">Все ответы верные.</p>'}</details>`).join('')
       : '<p class="meta">На этой неделе тест ещё никто не прошёл.</p>'}
-    <div class="actions"><a class="btn ghost small" href="#/b/quiz">Вопросы недели</a><a class="btn ghost small" href="#/b/rating">🏆 Рейтинг</a></div></div>`;
+    <div class="actions"><a class="btn ghost small" href="#/${role}/quiz">Вопросы недели</a><a class="btn ghost small" href="#/${role}/rating">🏆 Рейтинг</a></div></div>`;
   const mine = res.find(r => r.name === (lsGet('me') || ''));
   const started = !mine && lsGet('me') && Object.keys(getAns(weekNo(), lsGet('me'))).length;
   const top = rating()[0];
@@ -120,7 +120,7 @@ function viewQuiz(role) {
   const w = weekNo(), qs = weekQuestions(w);
   app.onclick = null;
   // Начальник: вопросы недели с правильными ответами
-  if (role === 'b') {
+  if (role === 'b' || role === 'm') {
     app.innerHTML = qs.map((qi, n) => { const [q, opts, right, ex] = QUIZ[qi];
       return `<div class="card"><p><b>${n + 1}. ${esc(q)}</b></p>${opts.map((o, j) => `<div class="quiz-o ${j === right ? 'right' : ''}">${esc(o)}</div>`).join('')}<p class="quiz-ex">${esc(ex)}</p></div>`; }).join('');
     return;

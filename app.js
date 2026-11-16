@@ -6,9 +6,9 @@ const $ = s => document.querySelector(s);
 const app = $('#app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDate = d => d ? new Date(d).toLocaleDateString('ru-RU') : '';
-const fmtDT = d => d ? new Date(d).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+const fmtDT = d => d ? new Date(d).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
-const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { throw new Error('Не удалось сохранить данные. Проверь свободное место и сделай резервную копию.'); } };
 
 const STATUS = {
   new: ['Новая', 'st-new'],
@@ -17,6 +17,7 @@ const STATUS = {
   pending: ['Ждёт отправки', 'st-pending'],
   sent: ['Выполнено', 'st-sent']
 };
+STATUS.returned = ['На доработке', 'st-not'];
 // Статус с учётом «Работа не выполнялась»
 function stOf(t) {
   if (t.status === 'sent' && t.outcome === 'notdone') return ['Работа не выполнялась', 'st-not'];
@@ -56,8 +57,12 @@ function openDB() {
   });
 }
 const req = (mode, fn, store = 'tasks') => new Promise((res, rej) => {
-  const r = fn(db.transaction(store, mode).objectStore(store));
-  r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  const tx = db.transaction(store, mode), r = fn(tx.objectStore(store));
+  let result;
+  r.onsuccess = () => { result = r.result; };
+  tx.oncomplete = () => res(result);
+  tx.onerror = () => rej(tx.error || r.error);
+  tx.onabort = () => rej(tx.error || new Error('Данные не сохранены'));
 });
 const docsAll = () => req('readonly', s => s.getAll(), 'docs');
 const docGet = id => req('readonly', s => s.get(id), 'docs');
@@ -80,7 +85,7 @@ function normalize(t) {
 }
 const dbAll = async () => (await req('readonly', s => s.getAll())).map(normalize);
 const dbGet = async id => normalize(await req('readonly', s => s.get(id)));
-const dbPut = t => req('readwrite', s => s.put(t));
+const dbPut = async t => { await req('readwrite', s => s.put(t)); if (t.status === 'sent') await rememberEquipment(t); };
 const dbDel = id => req('readwrite', s => s.delete(id));
 const dbClear = () => req('readwrite', s => s.clear());
 
@@ -131,7 +136,8 @@ function memoSet(id, key, val) {
 
 // Примеры заявок для показа
 async function seed() {
-  if ((await dbAll()).length) return;
+  if ((await dbAll()).length) { lsSet('psgiSeeded', '1'); return; }
+  if (lsGet('psgiSeeded') || getStaff().length) return;
   const today = new Date().toISOString().slice(0, 10);
   const crew = { respHead: 'Сидоров В. Н.', foreman: 'Иванов С. П.', members: ['Петров А. В.'] };
   const base = { status: 'new', briefing: { checked: [] }, date: today, crew };
@@ -144,6 +150,7 @@ async function seed() {
   addStaff(['Сидоров В. Н.', 'Иванов С. П.', 'Петров А. В.']);
   addToList('grObjects', ['КТПН', 'Скважина № 1', 'Скважина № 2', 'Станция управления', 'Шкаф КИПиА']);
   addToList('panels', ['ЩР-1', 'Шкаф управления', 'Шкаф освещения']);
+  lsSet('psgiSeeded', '1');
 }
 
 // ---------- Связь ----------
@@ -174,7 +181,7 @@ async function syncPending() {
     const list = (await dbAll()).filter(t => t.status === 'pending');
     for (const t of list) { t.status = 'sent'; t.sentAt = Date.now(); await dbPut(t); try { kustMark(t); } catch (e) {} }
     if (list.length) {
-      toast(list.length === 1 ? 'Отправлено начальнику' : `Отправлено заявок: ${list.length}`);
+      toast(list.length === 1 ? 'Готово к проверке на этом устройстве' : `Готово к проверке: ${list.length}`);
       // В прототипе начальник и монтёр на одном телефоне; в рабочей версии уведомление придёт начальнику через сервер
       for (const t of list) notify(`Получен протокол: заявка ${t.number}`, `${t.object}. ${t.outcome === 'notdone' ? 'Работа не выполнялась' : 'Протоколов: ' + t.items.length}`, `/b/task/${t.id}`);
       if (!location.hash.includes('/form') || list.some(t => t.id === currentFormId)) router();
@@ -195,7 +202,7 @@ function header(title, back) {
 }
 // Название испытания (номер пункта ПУЭ — отдельно, мелко)
 const typeName = type => WORK_TYPES[type]?.short || '—';
-const typeCode = type => WORK_TYPES[type] ? `ПУЭ п. ${WORK_TYPES[type].code}` : '';
+const typeCode = type => WORK_TYPES[type]?.code ? `ПУЭ п. ${WORK_TYPES[type].code}` : 'По утверждённой программе';
 
 async function deleteTask(t, back) {
   if (!confirm(`Удалить заявку ${t.number} «${t.object}»?\nПротоколы этой заявки тоже удалятся. Отменить нельзя.`)) return;
@@ -320,24 +327,26 @@ function tableHTML(f, v, ro) {
 
 function fieldHTML(f, v, ro) {
   if (f.type === 'row') {
-    return `<div class="row-wrap"><span class="lbl">${esc(f.label)}</span>
-      <div class="row" style="--n:${f.fields.length}">${f.fields.map(c => fieldHTML(c, v, ro)).join('')}</div></div>`;
+    const resistance = /МОм/.test(f.label);
+    return `<div class="row-wrap"><span class="lbl">${esc(resistance ? f.label.replace(/,\s*МОм$/, '') : f.label)}</span>
+      <div class="row" style="--n:${f.fields.length}">${f.fields.map(c => fieldHTML(resistance ? { ...c, unit: 'МОм' } : c, v, ro)).join('')}</div></div>`;
   }
   if (f.type === 'checklist') return checklistHTML(f, v, ro);
   if (f.type === 'table') return tableHTML(f, v, ro);
   if (f.type === 'reasons') return '<div class="reasons" data-reasons></div>';
   if (f.type === 'weather') {
-    return ro ? '' : `<button type="button" class="btn ghost small wbtn" data-weather="1">🌤 Подтянуть погоду из интернета</button>
-      <p class="hint">Температура, влажность и давление по месту, где вы сейчас. Если место не определится, приложение спросит населённый пункт. Без интернета введите вручную.</p>`;
+    return '';
   }
   if (f.type === 'calc') {
     return `<div class="calc" data-calc="${f.id}"><span class="calc-label">${esc(f.label)}</span>
       <span class="calc-val">—</span><span class="msg" data-msg="${f.id}"></span></div>`;
   }
-  const val = v[f.id] ?? '';
+  const resistance = f.unit === 'МОм' || /(?:,|\s)МОм$/.test(f.label);
+  const unit = resistance ? (v._units?.[f.id] || 'МОм') : f.unit;
+  const val = resistance ? resistanceDisplay(v[f.id], unit) : v[f.id] ?? '';
   let input;
   if (ro) {
-    input = `<div class="ro-val">${val !== '' ? esc(showVal(f, val)) + (f.unit ? ' ' + esc(f.unit) : '') : '—'}</div>`;
+    input = `<div class="ro-val">${val !== '' ? esc(showVal(f, val)) + (unit ? ' ' + esc(unit) : '') : '—'}</div>`;
   } else if (f.type === 'select') {
     input = `<select data-f="${f.id}"><option value="">— выберите —</option>${f.options.map(o => {
       const ov = typeof o === 'string' ? o : o.v, ot = typeof o === 'string' ? o : o.t;
@@ -350,7 +359,7 @@ function fieldHTML(f, v, ro) {
   } else {
     // signed — обычная клавиатура: на цифровой клавиатуре iPhone нет минуса, а здесь «+» и «−» есть
     input = `<div class="inp-wrap ${f.unit ? 'has-unit' : ''}">${''}<input data-f="${f.id}" ${f.type === 'number' && !f.signed ? 'inputmode="decimal"' : ''} ${f.signed ? 'placeholder="например, -5 или +12"' : ''}
-      value="${esc(val)}" autocomplete="off">${f.unit ? `<span class="unit">${esc(f.unit)}</span>` : ''}</div>`;
+      value="${esc(val)}" autocomplete="off">${resistance ? `<select class="unit-select" data-runit="${f.id}" aria-label="Единица сопротивления">${['кОм', 'МОм', 'ГОм'].map(u => `<option ${u === unit ? 'selected' : ''}>${u}</option>`).join('')}</select>` : unit ? `<span class="unit">${esc(unit)}</span>` : ''}</div>`;
   }
   const tag = 'label';
   return `<${tag} class="field" data-field="${f.id}"><span class="lbl">${esc(f.label)}${f.required && !ro ? ' <b class="req">*</b>' : ''}</span>
@@ -460,7 +469,7 @@ const DAYS = ['Воскресенье', 'Понедельник', 'Вторни�
 // Погода для главного экрана: без лишних вопросов — только если место уже разрешено или город запомнен
 async function homeWeather(mode) {
   const old = jget('homeW', null);
-  if (!mode && old && Date.now() - old.at < 30 * 60e3) return old;
+  if (!mode && old && Number.isFinite(old.pressure) && Number.isFinite(old.humidity) && Date.now() - old.at < 30 * 60e3) return old;
   if (!isOnline()) { if (mode) throw new Error('Нет интернета'); return old; }
   let c, place = '', why = '';
   if (mode !== 'city') {
@@ -474,24 +483,26 @@ async function homeWeather(mode) {
     place = c.place;
   }
   if (!c) return old;
-  const w = (await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.latitude.toFixed(3)}&longitude=${c.longitude.toFixed(3)}&current=temperature_2m,weather_code`)).json()).current;
-  const res = { t: Math.round(w.temperature_2m), code: w.weather_code, place: place || '', at: Date.now() };
+  const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.latitude.toFixed(3)}&longitude=${c.longitude.toFixed(3)}&current=temperature_2m,relative_humidity_2m,surface_pressure,weather_code`);
+  if (!response.ok) throw new Error('Сервис погоды не ответил');
+  const w = (await response.json()).current;
+  const res = { t: Math.round(w.temperature_2m), humidity: Math.round(w.relative_humidity_2m), pressure: Math.round(w.surface_pressure * 0.750062), code: w.weather_code, place: place || '', at: Date.now() };
   lsSet('homeW', JSON.stringify(res));
   return res;
 }
 const wIcon = code => code >= 71 && code <= 86 ? 'snow' : code >= 51 ? 'rain' : code >= 2 ? 'cloud' : 'sun';
 function weatherHTML(w) {
   if (!w) return `<button type="button" class="hw hw-set" data-hw="locate">${icon('pin')}<span>Погода<br><small>нажмите</small></span></button>`;
-  return `<button type="button" class="hw hw-set" data-hw="city" title="Сменить город">${icon(wIcon(w.code))}<span><b>${w.t > 0 ? '+' : ''}${w.t}°</b><small>${esc(w.place || 'здесь')}</small></span></button>`;
+  return `<button type="button" class="hw hw-set" data-hw="city" title="Сменить город">${icon(wIcon(w.code))}<span><b>${w.t > 0 ? '+' : ''}${w.t}°</b><small>${esc(w.place || 'здесь')}</small><small>${Number.isFinite(w.pressure) ? w.pressure + ' мм рт. ст.' : 'Давление —'}</small><small>${Number.isFinite(w.humidity) ? 'Влажность ' + w.humidity + '%' : 'Влажность —'}</small></span></button>`;
 }
 const homeTilesHTML = c => tile('#/h/kusty', 'rig', 'Кусты', kustOverdue()) + tile('#/h/docs/permit', 'permit', 'Наряды') + tile('#/h/devices', 'meter', 'Приборы', c.dev) +
   tile('#/h/phones', 'phone', 'Телефоны') + tile('#/h/people', 'people', 'Люди', upcomingBdays(0).length) + tile('#/h/games', 'game', 'Игры');
 function viewRoles() {
-  header('ЭлектроПротокол', null);
+  header('ПСГИ', null);
   const d = new Date(), h = d.getHours();
   const hello = h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
   app.innerHTML = `
-    <section class="home-hello"><div><p class="hh-day">${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS_GEN[d.getMonth()]}</p>
+    <section class="home-hello"><div><p class="hh-day">${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS_GEN[d.getMonth()]} ${d.getFullYear()}</p>
       <h2>${hello}!</h2><p class="hh-sub">Безопасной работы сегодня</p></div>
       <div id="homeW">${weatherHTML(jget('homeW', null))}</div></section>
     ${bdayBannerHTML()}
@@ -501,6 +512,8 @@ function viewRoles() {
         <span class="meta">Заявки, инструктаж, протоколы</span><span id="homeUnread"></span></button>
       <button class="role-card navy" data-role="b"><span class="rc-ic">${icon('clipboard')}</span><b>Начальник</b>
         <span class="meta">Заявки и полученные протоколы</span></button>
+      <button class="role-card master-role" data-role="m"><span class="rc-ic">${icon('people')}</span><b>Мастер</b>
+        <span class="meta">Задания бригаде и подготовка работ</span></button>
     </div>
     <h3 class="home-h">Быстрый доступ</h3>
     <div class="tiles home-tiles" id="homeTiles">${homeTilesHTML({})}</div>
@@ -541,7 +554,7 @@ const FILTERS = [
   ['notdone', 'Не выполн.', t => t.status === 'sent' && t.outcome === 'notdone'],
   ['all', 'Все', t => true]
 ];
-let filterE = 'work', filterB = 'work';
+let filterE = 'work', filterB = 'all';
 function filterHTML(cur, tasks, archive) {
   const list = archive ? [...FILTERS, ['archive', 'Архив', t => t.archived]] : FILTERS;
   return `<div class="seg" style="--n:${list.length}">${list.map(([k, l, fn]) => {
@@ -565,13 +578,13 @@ function verState(d) {
 // Счётчики для напоминаний: непрочитанное, документы без отметок всех людей, приборы с поверкой
 async function counts() {
   const docs = await docsAll();
-  const info = docs.filter(d => d.kind === 'info');
+  const info = docs.filter(d => d.kind === 'info' && docForPerson(d, me()));
   const unread = info.filter(d => !ackedBy(d, me())).length + quizPending();
   const people = getStaff().filter(n => !/начальник/i.test(staffPos(n)));
   const waiting = info.filter(d => people.some(n => !acksOf(d).some(a => a.name === n))).length;
   const dev = docs.filter(d => d.kind === 'device' && verState(d)[0] && verState(d)[0] !== 'ok').length;
   try { if (navigator.setAppBadge) unread ? navigator.setAppBadge(unread) : navigator.clearAppBadge(); } catch (e) {}
-  return { unread, waiting, dev };
+  return { unread: unread + personalTrainingPending(), waiting: managerUnread(docs), awaitingAcknowledgment: waiting, dev };
 }
 const tile = (href, ic, text, n) => `<a class="tile" href="${href}"><span class="t-ic">${ICONS[ic] ? icon(ic) : ic}</span>${text}${n ? `<b class="tbadge">${n}</b>` : ''}</a>`;
 // Куда «Назад» из общих разделов: с главного экрана (h) — на главный
@@ -611,7 +624,7 @@ function bindNotifyBtn() {
 
 async function viewElList() {
   header('Мои заявки', '/');
-  const all = (await dbAll()).sort(byNew);
+  const all = (await dbAll()).filter(t => !me() || !t.assignedElectrician || t.assignedElectrician === me() || crewNames(t).includes(me())).sort(byNew);
   const tasks = applyFilter(all, filterE);
   const pending = all.filter(t => t.status === 'pending').length;
   const secHTML = await sectionsHTML('e');
@@ -694,10 +707,11 @@ async function viewTask(id, tab, k) {
 
 // Ставит заявку в очередь отправки и отправляет, если есть связь
 async function submit(t) {
+  t.submittedBy = me() || t.assignedElectrician || ''; t.registrationShared = '';
   t.status = 'pending'; t.submittedAt = Date.now();
   await dbPut(t);
   if (isOnline()) {
-    toast('Отправляем…');
+    toast('Сохраняем для проверки…');
     await new Promise(r => setTimeout(r, 700));
     await syncPending();
   } else {
@@ -824,7 +838,7 @@ function renderForm(box, t, k) {
   if (n > 1) swipeNav = { prev: k > 0 ? `/e/task/${t.id}/form/${k - 1}` : null, next: k < n - 1 ? `/e/task/${t.id}/form/${k + 1}` : null };
   if (t.status === 'new') html += `<div class="banner warn">Сначала пройдите инструктаж. Без него протоколы не отправятся.</div>`;
   if (t.status === 'pending') html += `<div class="banner warn">Сохранено на телефоне и ждёт интернета. Отправится само.</div>`;
-  if (t.status === 'sent') html += `<div class="banner ok">Отправлено ${fmtDT(t.sentAt)}. Начальник видит.</div>`;
+  if (t.status === 'sent') html += `<div class="banner ok">Готово к проверке ${fmtDT(t.sentAt)}. Доступно в роли начальника на этом устройстве.</div>`;
   html += `<div class="card proto-head"><span class="meta">Протокол ${k + 1} из ${n} · ${esc(typeCode(it.type))}</span><h3>${esc(typeName(it.type))}</h3>
     ${ro ? '' : it.skip ? `<button class="btn ghost small mt" id="unskipBtn">Вернуть испытание</button>`
       : `<button class="btn ghost small mt" id="skipBtn">Это испытание не выполнялось</button>`}</div>`;
@@ -843,7 +857,7 @@ function renderForm(box, t, k) {
   }
   if (!it.skip) html += `<a class="btn ghost" href="#/e/paper/${t.id}/${k}">👁 Как будет выглядеть протокол</a>`;
   if (k < n - 1) html += `<a class="btn ghost" href="#/e/task/${t.id}/form/${k + 1}">Дальше: ${esc(typeName(t.items[k + 1].type))}</a>`;
-  if (!ro) html += `<div class="sticky-actions"><div class="inner"><button class="btn accent" id="sendBtn">Выполнено — отправить ${n > 1 ? `протоколы (${n})` : 'протокол'}</button></div></div>`;
+  if (!ro) html += `<div class="sticky-actions"><div class="inner"><button class="btn accent" id="sendBtn">Завершить — подготовить к проверке${n > 1 ? ` (${n})` : ''}</button></div></div>`;
   box.innerHTML = html;
   if (!it.skip) applyChecks(box, wt, v);
   // Запоминаем, какие пункты развёрнуты
@@ -898,18 +912,22 @@ function renderForm(box, t, k) {
   };
   const setVal = (id, val) => {
     const old = v[id];
-    v[id] = val;
+    v[id] = v._units?.[id] ? resistanceCanonical(val, v._units[id]) : val;
     if (isShared(id)) shareValues(t, k, id, old);
     if (id === 'conclusion') v.concl_manual = '1';
     // Запомнить значение (норма выключателя по типу и току)
     const f = flatFields(wt, v).find(x => x.id === id);
-    if (f?.memo && f.memo.every(m => v[m])) memoSet(id, f.memo.map(m => v[m]).join('|'), val);
+    if (f?.memo && f.memo.every(m => v[m])) memoSet(id, f.memo.map(m => v[m]).join('|'), v[id]);
     // Сменили тип или ток — подставить запомненную норму
     const dep = flatFields(wt, v).filter(x => x.memo?.includes(id));
     if (dep.length) { dep.forEach(d => { v[d.id] = ''; }); applyMemo(wt, v); dep.forEach(d => { const el = box.querySelector(`[data-f="${d.id}"]`); if (el) el.value = v[d.id] ?? ''; }); }
   };
   const onInput = async e => {
     const el = e.target, id = el.dataset.f;
+    if (el.dataset.runit) {
+      v._units ||= {}; v._units[el.dataset.runit] = el.value;
+      redrawSecOf(el.dataset.runit); refresh(); return;
+    }
     // Значения в списке с галочками
     if (el.dataset.clv) {
       const row = rowsOf(v, el.dataset.clv)[+el.dataset.i];
@@ -953,6 +971,7 @@ function renderForm(box, t, k) {
     const el = e.target;
     // Выпадающие списки: на старых iPhone приходит только change, без input
     if (el.isConnected && el.tagName === 'SELECT') {
+      if (el.dataset.runit && v._units?.[el.dataset.runit] !== el.value) return onInput(e);
       if (el.dataset.f && String(v[el.dataset.f] ?? '') !== el.value) return onInput(e);
       if (el.dataset.tv && String(rowsOf(v, el.dataset.tv)[+el.dataset.i]?.[el.dataset.col] ?? '') !== el.value) return onInput(e);
     }
@@ -1115,6 +1134,11 @@ async function cityCoords(askAgain, quiet, msg) {
 }
 async function fetchWeather(quiet) {
   if (!isOnline()) throw new Error('Нет интернета. Введите погоду вручную');
+  if (quiet) {
+    const w = await homeWeather();
+    if (!w || !Number.isFinite(w.pressure) || !Number.isFinite(w.humidity) || Date.now() - w.at > 30 * 60e3) throw new Error('Настройте погоду на главном экране или введите условия вручную');
+    return { place: w.place, values: { temp_air: String(w.t), humidity: String(w.humidity), pressure: String(w.pressure) } };
+  }
   let c, place = '';
   try { c = await getPos(); } catch (e) {
     try { c = await cityCoords(false, quiet, `Место не определилось: ${e.message}. Введите город или посёлок — он запомнится.`); place = c.place; } catch (err) {
@@ -1155,6 +1179,12 @@ async function viewEdit(role, id) {
       `<option value="__new">+ Новый человек…</option>`;
   };
   app.innerHTML = `<form class="card" id="ef" novalidate>
+    <h3>Кому поручено</h3>
+    <label class="field"><span class="lbl">Мастер</span><input name="assignedMaster" list="assignPeople" value="${esc(t.assignedMaster || '')}" autocomplete="off"></label>
+    <label class="field"><span class="lbl">Электромонтёр</span><input name="assignedElectrician" list="assignPeople" value="${esc(t.assignedElectrician || '')}" autocomplete="off"></label>
+    <datalist id="assignPeople">${getStaff().map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>
+    <label class="field"><span class="lbl">Комплекс работ</span><select id="workComplex"><option value="">Отдельные испытания</option><option value="ktpn" ${t.complex === 'ktpn' ? 'selected' : ''}>Испытание КТПН</option></select></label>
+    <p class="hint">В комплекс КТПН входят трансформатор, ОПН / разрядники, заземление, аппараты и техническое освидетельствование. Состав уточняется по установленному оборудованию.</p>
     <span class="lbl">Испытания <b class="req">*</b></span>
     <div id="tests"></div>
     <button type="button" class="btn ghost small" id="addTest">+ Добавить испытание</button>
@@ -1232,6 +1262,12 @@ async function viewEdit(role, id) {
   docsAll().then(all => { allDevs = all.filter(d => d.kind === 'device').sort((a, b) => a.name.localeCompare(b.name, 'ru')); drawDevs(); });
 
   $('#addTest').onclick = () => { items.push({ type: '', values: {}, photos: [] }); drawTests(); };
+  $('#workComplex').onchange = () => {
+    if ($('#workComplex').value !== 'ktpn') return;
+    for (const type of KTPN_TYPES) if (!items.some(i => i.type === type)) items.push({ type, values: {}, photos: [] });
+    for (let i = items.length - 1; i >= 0; i--) if (!items[i].type) items.splice(i, 1);
+    drawTests(); drawDevs();
+  };
   testsBox.onclick = e => {
     const i = e.target.dataset.tdel;
     if (i === undefined) return;
@@ -1293,6 +1329,8 @@ async function viewEdit(role, id) {
       object: fd.object.trim(), address: fd.address.trim(), equipment: fd.equipment.trim(), date: fd.date, comment: fd.comment.trim(),
       items: goodItems, crew, devices: [...devSel], devAuto
     };
+    saved.assignedMaster = fd.assignedMaster.trim(); saved.assignedElectrician = fd.assignedElectrician.trim(); saved.complex = $('#workComplex').value;
+    saved.createdBy ||= me(); saved.createdByRole ||= role;
     // В каждый протокол — только подходящие этому испытанию приборы (если там ещё пусто)
     for (const it of goodItems) {
       it.values = it.values || {};
@@ -1382,6 +1420,7 @@ function viewTBGroups() {
 
 // ---------- Начальник ----------
 function bossStatus(t) {
+  if (t.status === 'returned') return STATUS.returned;
   if (t.status === 'new') return ['Новая', 'st-new'];
   if (t.status === 'sent') return t.outcome === 'notdone' ? ['Работа не выполнялась', 'st-not'] : ['Выполнено', 'st-sent'];
   return ['В работе', 'st-draft'];
@@ -1440,7 +1479,7 @@ function protocolHTML(it, k, n, inner) {
       if (f.type === 'checklist' || f.type === 'table') return listRows(f, v, r);
       if (!f.id && f.type !== 'row') return [];
       const list = f.type === 'row' ? rowChildren(f) : [f];
-      return list.filter(x => String(v[x.id] ?? '').trim()).map(x => [x.label, showVal(x, v[x.id]) + (x.unit ? ' ' + x.unit : ''), x.id]);
+      return list.filter(x => String(v[x.id] ?? '').trim()).map(x => [x.label, measurementText(x, v), x.id]);
     });
     if (!rows.length) return '';
     return `<div class="${inner ? 'pres' : 'card'}"><h3>${esc(sec.title)}</h3><table class="res">${rows.map(([l, val, id]) =>
@@ -1602,7 +1641,7 @@ async function viewBossTask(id, kk) {
       ${t.status === 'sent' ? `<button class="btn ghost small wide" id="archBtn">${t.archived ? 'Вернуть из архива' : '🗄 В архив'}</button>` : ''}
     </div></div>`;
   let body;
-  if (t.status !== 'sent') body = `<div class="banner info">Протоколы ещё не получены. Статус: ${sl.toLowerCase()}.</div>`;
+  if (t.status !== 'sent' && t.status !== 'returned') body = `<div class="banner info">Протоколы ещё не получены. Статус: ${sl.toLowerCase()}.</div>`;
   else if (t.outcome === 'notdone') body = `<div class="banner warn">Работа не выполнялась. Причина: ${esc(t.reason)}</div>`;
   else {
     await loadPaperDevices();
@@ -1635,7 +1674,7 @@ const readFile = file => new Promise((res, rej) => { const r = new FileReader();
 async function viewDocs(role, kind) {
   const [title, one] = DOC_KINDS[kind] || DOC_KINDS.info;
   header(title, homeOf(role));
-  const docs = (await docsAll()).filter(d => d.kind === kind).sort((a, b) => b.created - a.created);
+  const docs = (await docsAll()).filter(d => d.kind === kind && (role !== 'e' || docForPerson(d, me()))).sort((a, b) => b.created - a.created);
   const people = getStaff().filter(n => !/начальник/i.test(staffPos(n)));
   const infoBadge = d => {
     if (role === 'e') { const done = ackedBy(d, me()), late = !done && d.due && d.due < today();
@@ -1645,7 +1684,7 @@ async function viewDocs(role, kind) {
     return `<span class="badge ${all ? 'st-sent' : late ? 'st-not' : 'st-new'}">${late ? 'Срок прошёл · ' : ''}Ознакомились: ${n}${people.length ? ' из ' + people.length : ''}</span>`;
   };
   app.innerHTML = `${role !== 'e' ? `<a class="btn accent" href="#/${role}/docnew/${kind}">+ Добавить ${one}</a><div class="gap"></div>` : ''}
-    ${kind === 'info' && role === 'b' ? '<div id="quizCard"></div>' : ''}${kind === 'info' && role === 'e' ? '<div id="quizCard"></div><p class="meta">Откройте каждый документ и нажмите «Ознакомлен».</p><div class="gap"></div>' : ''}
+    ${kind === 'info' ? '<div id="quizCard"></div>' : ''}${kind === 'info' && role === 'e' ? '<p class="meta">Откройте каждый документ и нажмите «Ознакомлен».</p><div class="gap"></div>' : ''}
     ${docs.map(d => `<a class="card task" href="#/${role}/doc/${d.id}">
       <div class="top-line"><span>${fmtDate(d.created)}${d.due ? ' · до ' + fmtDate(d.due) : ''}</span>${kind === 'info' ? infoBadge(d) : ''}</div>
       <div class="obj">${esc(d.title)}</div>
@@ -1664,6 +1703,7 @@ async function viewDocEdit(kind, id, role = 'b') {
     <label class="field"><span class="lbl">Название <b class="req">*</b></span><input name="title" value="${esc(old?.title)}" autocomplete="off"></label>
     <label class="field"><span class="lbl">Текст</span><textarea name="text" rows="6">${esc(old?.text)}</textarea></label>
     ${kind === 'info' ? `<label class="field"><span class="lbl">Ознакомиться до</span><input type="date" name="due" value="${esc(old?.due)}"></label>` : ''}
+    ${kind === 'info' ? `<label class="field"><span class="lbl">Для кого</span><select name="recipient"><option value="">Всем сотрудникам</option>${getStaff().map(n => `<option value="${esc(n)}" ${old?.recipients?.includes(n) ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>` : ''}
     <span class="lbl">Файлы (фото, PDF, документы)</span><div id="fl"></div>
     <label class="btn ghost file-btn">📎 Прикрепить файл<input type="file" multiple id="fInp"></label>
     <div class="gap"></div><button class="btn accent" type="submit">Сохранить</button></form>`;
@@ -1684,6 +1724,7 @@ async function viewDocEdit(kind, id, role = 'b') {
     const fd = Object.fromEntries(new FormData(e.target));
     if (!fd.title.trim()) { toast('Укажите название'); return; }
     const d = { ...(old || { id: 'd' + Date.now(), kind, created: Date.now() }), title: fd.title.trim(), text: fd.text.trim(), files, due: fd.due || '' };
+    if (kind === 'info') d.recipients = fd.recipient ? [fd.recipient] : [];
     if (old && kind === 'info' && (old.text !== d.text || old.files?.length !== files.length)) { d.ackAt = null; d.acks = []; } // изменили — нужно ознакомиться заново
     await docPut(d);
     toast('Сохранено');
@@ -1707,7 +1748,7 @@ async function viewDoc(role, id) {
   if (!d) { location.hash = '/' + role; return; }
   header(DOC_KINDS[d.kind]?.[0] || 'Документ', `/${role}/docs/${d.kind}`);
   const acks = acksOf(d), staff = getStaff();
-  const people = staff.filter(n => !/начальник/i.test(staffPos(n)));
+  const people = staff.filter(n => !/начальник/i.test(staffPos(n)) && docForPerson(d, n));
   const notYet = people.filter(n => !acks.some(a => a.name === n));
   const late = d.due && d.due < today();
   let ackHTML = '';
@@ -1715,7 +1756,7 @@ async function viewDoc(role, id) {
     // Ознакомился позже срока — помечаем
     const afterDue = a => d.due && new Date(a.at).toISOString().slice(0, 10) > d.due;
     const list = acks.length ? '<ul class="acks">' + acks.map(a => `<li class="${afterDue(a) ? 'txt-bad' : ''}">✓ ${esc(a.name || 'без фамилии')} — ${fmtDT(a.at)}${afterDue(a) ? ' (после срока)' : ''}</li>`).join('') + '</ul>' : '<p class="meta">Пока никто не ознакомился.</p>';
-    if (role === 'b') ackHTML = `<div class="card"><h3>Ознакомились</h3>${list}${notYet.length ? `<h3 class="mt ${late ? 'txt-bad' : ''}">${late ? 'Срок прошёл, не ознакомились' : 'Ещё не ознакомились'}</h3><p>${esc(notYet.join(', '))}</p>` : ''}</div>`;
+    if (role === 'b' || role === 'm') ackHTML = `<div class="card"><h3>Ознакомились</h3>${list}${notYet.length ? `<h3 class="mt ${late ? 'txt-bad' : ''}">${late ? 'Срок прошёл, не ознакомились' : 'Ещё не ознакомились'}</h3><p>${esc(notYet.join(', '))}</p>` : ''}</div>`;
     else ackHTML = ackedBy(d, me()) && me() ? `<div class="banner ok">${esc(me())}: ознакомлен ${fmtDT(acks.find(a => a.name === me())?.at)}.</div>`
       : `<div class="card"><label class="field"><span class="lbl">Кто ознакомился</span><select id="ackName"><option value="">— выберите себя —</option>${
         staff.map(n => `<option ${n === me() ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
@@ -1843,7 +1884,7 @@ async function viewDeviceEdit(role, id) {
 let swipeNav = null, touch0 = null;
 document.addEventListener('touchstart', e => {
   const el = e.target;
-  touch0 = swipeNav && !el.closest('input, select, textarea, .subtabs, .ntbl, pre, .chips') ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+  touch0 = swipeNav && !el.closest('input, select, textarea, .subtabs, .ntbl, pre, .chips, .swipe-row') ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
 }, { passive: true });
 document.addEventListener('touchend', e => {
   if (!touch0 || !swipeNav) return;
@@ -1855,7 +1896,7 @@ document.addEventListener('touchend', e => {
 }, { passive: true });
 
 // ---------- Переходы между экранами ----------
-function router() {
+function routeCore() {
   const p = (location.hash.slice(1) || '/').split('/').filter(Boolean);
   window.scrollTo(0, 0);
   currentFormId = null; swipeNav = null; app.onchange = null; app.onclick = null;
@@ -1902,9 +1943,10 @@ function router() {
   viewRoles();
 }
 
-(async () => {
+async function startApp() {
   await openDB();
   await seed();
+  await initializeRelease();
   renderNet();
   window.addEventListener('hashchange', router);
   counts();
@@ -1912,4 +1954,4 @@ function router() {
   syncPending();
   checkBirthdays();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-})();
+}

@@ -62,7 +62,7 @@ const PROTO_SECTION = {
     { id: 'place', label: 'Место проведения испытаний', type: 'text' },
     { id: 'mode', label: 'Вид испытаний', type: 'select', options: MODES },
     { type: 'weather' },
-    { id: 'temp_air', label: 'Температура воздуха', type: 'number', unit: '°C', signed: true },
+    { id: 'temp_air', label: 'Температура воздуха', type: 'number', unit: '°C', signed: true, hint: 'Подставляется погода главного экрана. Уточни фактические условия на объекте; температуру обмотки измеряют отдельно.' },
     { id: 'humidity', label: 'Влажность воздуха', type: 'number', unit: '%' },
     { id: 'pressure', label: 'Атмосферное давление', type: 'number', unit: 'мм рт. ст.' },
     { id: 'devices', label: 'Приборы', type: 'checklist', store: 'devices', add: '+ Добавить прибор',
@@ -644,7 +644,7 @@ const MOTOR = {
         { id: 'st_star', label: 'Схема обмоток статора при измерении', type: 'select', rerender: true, options: STAR },
         { type: 'dyn', make: v => [phaseRow('Статор', 'st_dc', 'Ом', v.st_star === STAR[1] ? ['С1–С2', 'С2–С3', 'С1–С3'] : ['С1–С4', 'С2–С5', 'С3–С6'])] },
         { type: 'calc', id: 'st_dcd', label: 'Разница фаз статора' },
-        { id: 'rt_dc', label: 'Ротор: начало — конец обмотки', type: 'number', unit: 'Ом' }
+        { id: 'rt_dc', label: 'Ротор', type: 'number', unit: 'Ом' }
       ]},
     genericItem(5, M_ITEMS[4]),
     genericItem(6, M_ITEMS[5]),
