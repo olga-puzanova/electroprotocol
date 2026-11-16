@@ -1,37 +1,47 @@
-// Помощник для работы без интернета: сохраняет файлы приложения в память телефона.
-const CACHE = 'psgi-v17';
-const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'norms.js', 'potee.js', 'extras.js', 'kusty.js', 'manifest.json', 'icon.svg', 'improvements.js', 'pdf-export.js', 'ideas.js', 'chat.js', 'vendor/pdf-lib.min.js', 'vendor/fontkit.umd.min.js', 'vendor/NotoSans-Regular.ttf', 'manuals/e6-24.pdf', 'manuals/ptf-1.pdf', 'manuals/iks-30a.pdf', 'manuals/kew-6016.pdf', 'manuals/mpi-530.pdf', 'manuals/aid-70c.pdf'];
-
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
-});
-
-self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE && /^(electro-v|psgi-v)/.test(k)).map(k => caches.delete(k)))).then(() => self.clients.claim()));
-});
-
-// Сначала пробуем интернет (свежая версия), если его нет — берём из памяти.
-self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== self.location.origin) return;
-  e.respondWith(
-    fetch(e.request, { cache: 'no-cache' })
-      .then(res => {
-        if (!res.ok) throw new Error('Ошибка загрузки');
-        const copy = res.clone();
-        e.waitUntil(caches.open(CACHE).then(c => c.put(e.request, copy)));
-        return res;
-      })
-      .catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || (e.request.mode === 'navigate' ? caches.match('index.html') : Response.error())))
-  );
-});
-
-// Нажали на уведомление — открываем нужную заявку
-self.addEventListener('notificationclick', e => {
-  e.notification.close();
-  const hash = (e.notification.data && e.notification.data.hash) || '';
-  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
-    const url = './#' + hash;
-    if (list.length) { list[0].navigate(url); return list[0].focus(); }
-    return self.clients.openWindow(url);
+const CACHE = 'psgi-v18';
+const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'norms.js', 'potee.js', 'extras.js', 'kusty.js', 'manifest.json', 'icon.svg', 'improvements.js', 'repairs.js', 'pdf-export.js', 'ideas.js', 'chat.js', 'vendor/pdf-lib.min.js', 'vendor/fontkit.umd.min.js', 'vendor/NotoSans-Regular.ttf'];
+const MANUAL_FILES = ['manuals/e6-24.pdf','manuals/ptf-1.pdf','manuals/iks-30a.pdf','manuals/kew-6016.pdf','manuals/mpi-530.pdf','manuals/aid-70c.pdf'];
+const shellURLs = new Set(FILES.map(file=>new URL(file,self.registration.scope).href));
+async function network(request, timeout=12000) {
+  const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),timeout);
+  try { const response=await fetch(request,{cache:'no-cache',signal:controller.signal});if(!response.ok)throw Error('HTTP '+response.status);return response; }
+  finally {clearTimeout(timer);}
+}
+self.addEventListener('install',event=>event.waitUntil((async()=>{
+  const cache=await caches.open(CACHE);
+  await cache.addAll(FILES.map(file=>new Request(new URL(file,self.registration.scope),{cache:'reload'})));
+  await self.skipWaiting();
+})()));
+self.addEventListener('activate',event=>event.waitUntil((async()=>{
+  await self.clients.claim();
+  const cache=await caches.open(CACHE), keys=await caches.keys();
+  await Promise.all(MANUAL_FILES.map(async file=>{
+    const url=new URL(file,self.registration.scope).href;
+    const old=await caches.match(url,{ignoreSearch:true});
+    if(old)await cache.put(url,old);
+    else try{await cache.put(url,await network(url));}catch{}
   }));
+  await Promise.all(keys.filter(key=>key!==CACHE&&/^(electro-v|psgi-v)/.test(key)).map(key=>caches.delete(key)));
+})()));
+self.addEventListener('fetch',event=>{
+  const url=new URL(event.request.url);
+  if(event.request.method!=='GET'||url.origin!==self.location.origin||!url.href.startsWith(self.registration.scope))return;
+  url.search='';
+  event.respondWith((async()=>{
+    const cache=await caches.open(CACHE),cached=await cache.match(url.href);
+    if(event.request.mode==='navigate')return cached||await cache.match(new URL('index.html',self.registration.scope))||network(event.request,3500);
+    if(cached)return cached;
+    try{const response=await network(event.request);if(shellURLs.has(url.href)||/\/manuals\/[^/]+\.pdf$/.test(url.pathname))await cache.put(url.href,response.clone());return response;}
+    catch{return Response.error();}
+  })());
 });
+self.addEventListener('notificationclick',event=>{
+  event.notification.close();
+  event.waitUntil((async()=>{
+    const url=new URL('./#'+(event.notification.data?.hash||''),self.registration.scope).href;
+    const clients=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+    const client=clients.find(c=>c.url.startsWith(self.registration.scope));
+    if(client){await client.navigate(url);return client.focus();}return self.clients.openWindow(url);
+  })());
+});
+// Release 18: 2026-11-16, final shell and forms.

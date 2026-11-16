@@ -79,6 +79,7 @@ async function buildProtocolPDF(t) {
     for (const sec of wt.form.filter(s => secVisible(s, v) && s !== wt.form[0])) {
       const entries = [];
       for (const f of expand(sec.fields, v)) {
+        if (f.type === 'location' && v.latitude && v.longitude) entries.push(['Координаты',`${v.latitude}, ${v.longitude}`]);
         if (f.type === 'checklist' || f.type === 'table') {
           for (const [label, value] of listRows(f, v, result)) entries.push([label, value]);
         } else if (f.type === 'calc') {

@@ -80,6 +80,7 @@ function normalize(t) {
     t.crew = { respExec: '', respHead: '', foreman: '', members: t.executors || (t.executor ? [t.executor] : []) };
     delete t.executor; delete t.executors;
   }
+  t.items.forEach((item, index) => { item.id ||= t.id + '-item-' + index; for (const key of Object.keys(item.values?._units || {})) if (item.values._units[key] === 'ГОм') item.values._units[key] = 'МОм'; });
   t.briefing = t.briefing || { checked: [] };
   return t;
 }
@@ -226,7 +227,7 @@ function expand(fields, v) {
 function rowChildren(f) {
   const i = f.label.lastIndexOf(', ');
   const name = i > 0 ? f.label.slice(0, i) : f.label, unit = i > 0 ? f.label.slice(i + 2) : '';
-  return f.fields.map(c => ({ ...c, label: `${name}: ${c.label}`, unit }));
+  return f.fields.map(c => ({ ...c, label: `${name}: ${c.label}`, unit: c.unit || unit }));
 }
 // Раздел виден, если подходит к выбранному оборудованию
 const secVisible = (sec, v) => !sec.show || sec.show(v);
@@ -264,14 +265,14 @@ function normsHTML(wt, sec, v) {
   const pue = N.pue[sec.ref - 1], ri = N.map[sec.ref - 1], rd = ri >= 0 ? N.rd[ri] : null;
   if (!pue && !rd) return '';
   // Выбран вид испытаний — показываем нормы только для него
-  const showP = v.mode !== 'M', showR = v.mode !== 'P';
+  const showP = !isRD(v), showR = isRD(v);
   const blocks = [
     pue && showP ? `<h4>ПУЭ п. ${wt.code}, пункт ${sec.ref} — приёмо-сдаточные</h4>${paras(pue)}` : '',
     rd && showR ? `<h4>РД 34.45-51.300-97, п. ${rd.n} — в эксплуатации</h4>${paras(rd.t)}` : ''
   ].filter(Boolean);
   if (!blocks.length) return v.mode === 'M' ? '<p class="hint">В РД этого пункта нет.</p>' : '';
-  const name = v.mode === 'P' ? 'Нормы ПУЭ' : v.mode === 'M' ? 'Нормы РД' : 'Нормы ПУЭ и РД';
-  return `<details class="norms"><summary>📖 ${name}</summary>${blocks.join('')}</details>`;
+  const name = showR ? 'Нормы РД' : 'Нормы ПУЭ';
+  return `<details class="norms"><summary>📖 ${name}</summary>${blocks.join('')}${showR?normReferencesHTML(wt, rd?.t || ''):''}</details>`;
 }
 function sectionInner(sec, v, ro, wt, noTitle) {
   return `${noTitle ? '' : `<h3>${esc(sec.title)}</h3>`}${sec.note && !ro ? `<p class="note">${esc(sec.note)}</p>` : ''}
@@ -326,6 +327,7 @@ function tableHTML(f, v, ro) {
 }
 
 function fieldHTML(f, v, ro) {
+  if (f.type === 'location') return `<div class="location-field"><p class="meta">${v.latitude && v.longitude ? `Координаты: ${esc(v.latitude)}, ${esc(v.longitude)}` : 'Координаты ещё не сохранены'}</p>${ro ? '' : '<button type="button" class="btn ghost" data-geolocate>Я сейчас тут — взять координаты</button>'}</div>`;
   if (f.type === 'row') {
     const resistance = /МОм/.test(f.label);
     return `<div class="row-wrap"><span class="lbl">${esc(resistance ? f.label.replace(/,\s*МОм$/, '') : f.label)}</span>
@@ -335,14 +337,14 @@ function fieldHTML(f, v, ro) {
   if (f.type === 'table') return tableHTML(f, v, ro);
   if (f.type === 'reasons') return '<div class="reasons" data-reasons></div>';
   if (f.type === 'weather') {
-    return '';
+    return '<p class="hint" data-weather-status role="status">Условия заполняются автоматически, когда настроена погода на главном экране. Можно ввести вручную.</p>';
   }
   if (f.type === 'calc') {
     return `<div class="calc" data-calc="${f.id}"><span class="calc-label">${esc(f.label)}</span>
       <span class="calc-val">—</span><span class="msg" data-msg="${f.id}"></span></div>`;
   }
   const resistance = f.unit === 'МОм' || /(?:,|\s)МОм$/.test(f.label);
-  const unit = resistance ? (v._units?.[f.id] || 'МОм') : f.unit;
+  const unit = resistance ? (v._units?.[f.id] === 'кОм' ? 'кОм' : 'МОм') : f.unit;
   const val = resistance ? resistanceDisplay(v[f.id], unit) : v[f.id] ?? '';
   let input;
   if (ro) {
@@ -359,7 +361,7 @@ function fieldHTML(f, v, ro) {
   } else {
     // signed — обычная клавиатура: на цифровой клавиатуре iPhone нет минуса, а здесь «+» и «−» есть
     input = `<div class="inp-wrap ${f.unit ? 'has-unit' : ''}">${''}<input data-f="${f.id}" ${f.type === 'number' && !f.signed ? 'inputmode="decimal"' : ''} ${f.signed ? 'placeholder="например, -5 или +12"' : ''}
-      value="${esc(val)}" autocomplete="off">${resistance ? `<select class="unit-select" data-runit="${f.id}" aria-label="Единица сопротивления">${['кОм', 'МОм', 'ГОм'].map(u => `<option ${u === unit ? 'selected' : ''}>${u}</option>`).join('')}</select>` : unit ? `<span class="unit">${esc(unit)}</span>` : ''}</div>`;
+      value="${esc(val)}" autocomplete="off">${resistance ? `<select class="unit-select" data-runit="${f.id}" aria-label="Единица сопротивления">${['кОм', 'МОм'].map(u => `<option ${u === unit ? 'selected' : ''}>${u}</option>`).join('')}</select>` : unit ? `<span class="unit">${esc(unit)}</span>` : ''}</div>`;
   }
   const tag = 'label';
   return `<${tag} class="field" data-field="${f.id}"><span class="lbl">${esc(f.label)}${f.required && !ro ? ' <b class="req">*</b>' : ''}</span>
@@ -478,21 +480,24 @@ async function homeWeather(mode) {
     // Сам по себе спрашиваем место, только если уже разрешено; по нажатию — всегда
     if (mode === 'locate' || perm === 'granted') { try { c = await getPos(); } catch (e) { why = e.message; } }
   }
+  if (!c && !mode) { c = jget('weatherLocation', null); place = c?.place || ''; }
   if (!c && (lsGet('weatherCity') || mode)) {
     c = await cityCoords(mode === 'city', !mode, why ? `Место не определилось: ${why}. Введите город или посёлок.` : '');
     place = c.place;
   }
   if (!c) return old;
+  lsSet('weatherLocation', JSON.stringify({latitude:c.latitude,longitude:c.longitude,place}));
   const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.latitude.toFixed(3)}&longitude=${c.longitude.toFixed(3)}&current=temperature_2m,relative_humidity_2m,surface_pressure,weather_code`);
   if (!response.ok) throw new Error('Сервис погоды не ответил');
   const w = (await response.json()).current;
+  if (!w || ['temperature_2m','relative_humidity_2m','surface_pressure'].some(k => w[k] == null || !Number.isFinite(w[k]))) throw new Error('Сервис не вернул все условия погоды');
   const res = { t: Math.round(w.temperature_2m), humidity: Math.round(w.relative_humidity_2m), pressure: Math.round(w.surface_pressure * 0.750062), code: w.weather_code, place: place || '', at: Date.now() };
   lsSet('homeW', JSON.stringify(res));
   return res;
 }
 const wIcon = code => code >= 71 && code <= 86 ? 'snow' : code >= 51 ? 'rain' : code >= 2 ? 'cloud' : 'sun';
 function weatherHTML(w) {
-  if (!w) return `<button type="button" class="hw hw-set" data-hw="locate">${icon('pin')}<span>Погода<br><small>нажмите</small></span></button>`;
+  if (!w) return `<button type="button" class="hw hw-set" data-hw="city">${icon('pin')}<span>Погода —<small>Давление —</small><small>Влажность —</small><small>Указать город</small></span></button>`;
   return `<button type="button" class="hw hw-set" data-hw="city" title="Сменить город">${icon(wIcon(w.code))}<span><b>${w.t > 0 ? '+' : ''}${w.t}°</b><small>${esc(w.place || 'здесь')}</small><small>${Number.isFinite(w.pressure) ? w.pressure + ' мм рт. ст.' : 'Давление —'}</small><small>${Number.isFinite(w.humidity) ? 'Влажность ' + w.humidity + '%' : 'Влажность —'}</small></span></button>`;
 }
 const homeTilesHTML = c => tile('#/h/kusty', 'rig', 'Кусты', kustOverdue()) + tile('#/h/docs/permit', 'permit', 'Наряды') + tile('#/h/devices', 'meter', 'Приборы', c.dev) +
@@ -512,8 +517,7 @@ function viewRoles() {
         <span class="meta">Заявки, инструктаж, протоколы</span><span id="homeUnread"></span></button>
       <button class="role-card navy" data-role="b"><span class="rc-ic">${icon('clipboard')}</span><b>Начальник</b>
         <span class="meta">Заявки и полученные протоколы</span></button>
-      <button class="role-card master-role" data-role="m"><span class="rc-ic">${icon('people')}</span><b>Мастер</b>
-        <span class="meta">Задания бригаде и подготовка работ</span></button>
+
     </div>
     <h3 class="home-h">Быстрый доступ</h3>
     <div class="tiles home-tiles" id="homeTiles">${homeTilesHTML({})}</div>
@@ -558,11 +562,11 @@ let filterE = 'work', filterB = 'all';
 function filterHTML(cur, tasks, archive) {
   const list = archive ? [...FILTERS, ['archive', 'Архив', t => t.archived]] : FILTERS;
   return `<div class="seg" style="--n:${list.length}">${list.map(([k, l, fn]) => {
-    const n = tasks.filter(t => k === 'archive' ? t.archived : !t.archived && fn(t)).length;
+    const n = tasks.filter(t => k === 'archive' ? t.archived : (!t.archived || (!archive && t.status === 'sent')) && fn(t)).length;
     return `<button class="seg-b ${k === cur ? 'on' : ''}" data-filter="${k}"><b>${n}</b><span>${l}</span></button>`;
   }).join('')}</div>`;
 }
-const applyFilter = (tasks, k) => tasks.filter(t => !t.archived && (FILTERS.find(f => f[0] === k) || FILTERS[0])[2](t));
+const applyFilter = (tasks, k, includeCompletedArchive=false) => tasks.filter(t => (!t.archived || (includeCompletedArchive && t.status==='sent')) && (FILTERS.find(f => f[0] === k) || FILTERS[0])[2](t));
 // Кто сейчас пользуется телефоном как монтёр (для отметки «Ознакомлен»)
 const me = () => lsGet('me') || '';
 // Старые документы с одной отметкой ackAt → список отметок
@@ -624,8 +628,8 @@ function bindNotifyBtn() {
 
 async function viewElList() {
   header('Мои заявки', '/');
-  const all = (await dbAll()).filter(t => !me() || !t.assignedElectrician || t.assignedElectrician === me() || crewNames(t).includes(me())).sort(byNew);
-  const tasks = applyFilter(all, filterE);
+  const all = (await dbAll()).filter(t => t.status === 'sent' || isTaskAssignedTo(t, me())).sort(byNew);
+  const tasks = applyFilter(all, filterE, true);
   const pending = all.filter(t => t.status === 'pending').length;
   const secHTML = await sectionsHTML('e');
   app.innerHTML = `
@@ -668,9 +672,7 @@ async function viewTask(id, tab, k) {
       <div class="top-line"><span>${fmtDate(t.date)}</span><span class="badge ${sc}">${sl}</span></div>
       <div class="obj">${esc(t.object)}</div>
       <p class="meta">${t.address ? esc(t.address) + '<br>' : ''}${permitHTML(t)}${t.equipment ? 'Оборудование: <b>' + esc(t.equipment) + '</b><br>' : ''}${crewHTML(t)}${t.comment ? '<br>' + esc(t.comment) : ''}</p>
-      ${t.status === 'sent' || t.status === 'pending' ? testsHTML(t) : `<ul class="tests ctl">${t.items.map((i, j) => `<li><span>${esc(typeName(i.type))}${
-        i.skip ? ` — <b class="txt-warn">не выполнялось</b>${i.reason ? ' (' + esc(i.reason) + ')' : ''}` : ''}</span>
-        <button type="button" class="btn ghost small" data-skip="${j}">${i.skip ? 'Вернуть' : 'Не выполнялось'}</button></li>`).join('')}</ul>`}
+
       ${t.outcome === 'notdone' ? `<div class="banner warn mt">Работа не выполнялась. Причина: ${esc(t.reason)}</div>` : ''}
       <div class="actions">
         <a class="btn ghost small" href="#/e/edit/${id}">✎ Изменить</a>
@@ -856,7 +858,7 @@ function renderForm(box, t, k) {
         <label class="btn ghost file-btn">🖼 Из галереи<input type="file" accept="image/*" multiple class="photoInp"></label></div>`}</div>`;
   }
   if (!it.skip) html += `<a class="btn ghost" href="#/e/paper/${t.id}/${k}">👁 Как будет выглядеть протокол</a>`;
-  if (k < n - 1) html += `<a class="btn ghost" href="#/e/task/${t.id}/form/${k + 1}">Дальше: ${esc(typeName(t.items[k + 1].type))}</a>`;
+
   if (!ro) html += `<div class="sticky-actions"><div class="inner"><button class="btn accent" id="sendBtn">Завершить — подготовить к проверке${n > 1 ? ` (${n})` : ''}</button></div></div>`;
   box.innerHTML = html;
   if (!it.skip) applyChecks(box, wt, v);
@@ -951,7 +953,7 @@ function renderForm(box, t, k) {
     setVal(id, el.value);
     if (flatFields(wt, v).some(x => x.id === id && x.reform) || wt.form.some(sec => sec.fields.some(x => x.id === id && x.reform))) {
       const y = scrollY;
-      save().then(() => viewTask(t.id, 'form', k)).then(() => scrollTo(0, y));
+      save().then(() => router()).then(() => scrollTo(0, y));
       return;
     }
     el.closest('.field')?.classList.remove('missing');
@@ -1039,14 +1041,14 @@ function renderForm(box, t, k) {
     }
   });
 
-  if (!v.temp_air && isOnline() && !autoWeatherDone.has(t.id + '|' + k)) {
+  if (['temp_air','humidity','pressure'].some(id=>!String(v[id]??'').trim()) && !autoWeatherDone.has(t.id + '|' + k)) {
     autoWeatherDone.add(t.id + '|' + k);
     fetchWeather(true).then(w => {
-      if (currentFormId !== t.id || v.temp_air) return;
-      for (const [id, val] of Object.entries(w.values)) setVal(id, val);
+      if (currentFormId !== t.id || !box.isConnected) return;
+      for (const [id, val] of Object.entries(w.values)) if (!String(v[id]??'').trim()) setVal(id, val);
       redrawSecOf('temp_air'); refresh();
-      toast(`Погода заполнена${w.place ? ': ' + w.place : ''}`);
-    }).catch(() => {});
+      const status=box.querySelector('[data-weather-status]');if(status)status.textContent='Условия погоды заполнены автоматически.';
+    }).catch(error => { autoWeatherDone.delete(t.id + '|' + k); const status=box.querySelector('[data-weather-status]');if(status)status.textContent=error.message; });
   }
   const photoBox = $('#photos');
   box.querySelectorAll('.photoInp').forEach(inp => inp.onchange = async e => {
@@ -1133,12 +1135,12 @@ async function cityCoords(askAgain, quiet, msg) {
   return { latitude: p.latitude, longitude: p.longitude, place: p.name };
 }
 async function fetchWeather(quiet) {
-  if (!isOnline()) throw new Error('Нет интернета. Введите погоду вручную');
   if (quiet) {
     const w = await homeWeather();
     if (!w || !Number.isFinite(w.pressure) || !Number.isFinite(w.humidity) || Date.now() - w.at > 30 * 60e3) throw new Error('Настройте погоду на главном экране или введите условия вручную');
     return { place: w.place, values: { temp_air: String(w.t), humidity: String(w.humidity), pressure: String(w.pressure) } };
   }
+  if (!isOnline()) throw new Error('Нет интернета. Введите погоду вручную');
   let c, place = '';
   try { c = await getPos(); } catch (e) {
     try { c = await cityCoords(false, quiet, `Место не определилось: ${e.message}. Введите город или посёлок — он запомнится.`); place = c.place; } catch (err) {
@@ -1166,11 +1168,11 @@ async function viewEdit(role, id) {
   header(id ? `Изменить ${old.number}` : 'Новая заявка', back);
   const t = old || { date: new Date().toISOString().slice(0, 10), items: [{ type: '', values: {}, photos: [] }],
     crew: { respHead: '', foreman: '', members: [''] } };
-  const items = t.items.map(i => ({ ...i }));
+  const items = t.items.map(i => structuredClone(i));
   const crew = { ...t.crew, members: [...(t.crew.members || [])] };
   if (!crew.members.length) crew.members.push('');
 
-  const typeOpts = sel => `<option value="">— выберите испытание —</option>` +
+  const typeOpts = sel => `<option value="">— выберите испытание —</option><option value="__ktpn">Испытание КТПН — комплекс</option>` +
     Object.entries(WORK_TYPES).map(([key, w]) => `<option value="${key}" ${key === sel ? 'selected' : ''}>${esc(w.short)}</option>`).join('');
   const personOpts = sel => {
     const staff = getStaff();
@@ -1179,12 +1181,7 @@ async function viewEdit(role, id) {
       `<option value="__new">+ Новый человек…</option>`;
   };
   app.innerHTML = `<form class="card" id="ef" novalidate>
-    <h3>Кому поручено</h3>
-    <label class="field"><span class="lbl">Мастер</span><input name="assignedMaster" list="assignPeople" value="${esc(t.assignedMaster || '')}" autocomplete="off"></label>
-    <label class="field"><span class="lbl">Электромонтёр</span><input name="assignedElectrician" list="assignPeople" value="${esc(t.assignedElectrician || '')}" autocomplete="off"></label>
-    <datalist id="assignPeople">${getStaff().map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>
-    <label class="field"><span class="lbl">Комплекс работ</span><select id="workComplex"><option value="">Отдельные испытания</option><option value="ktpn" ${t.complex === 'ktpn' ? 'selected' : ''}>Испытание КТПН</option></select></label>
-    <p class="hint">В комплекс КТПН входят трансформатор, ОПН / разрядники, заземление, аппараты и техническое освидетельствование. Состав уточняется по установленному оборудованию.</p>
+    <input type="hidden" id="workComplex" value="${esc(t.complex || '')}">
     <span class="lbl">Испытания <b class="req">*</b></span>
     <div id="tests"></div>
     <button type="button" class="btn ghost small" id="addTest">+ Добавить испытание</button>
@@ -1277,8 +1274,10 @@ async function viewEdit(role, id) {
   testsBox.onchange = e => {
     const i = e.target.dataset.ti;
     if (i === undefined) return;
-    if (hasData(items[i]) && !confirm('В этом протоколе уже есть данные. Сменить испытание? Данные удалятся.')) { drawTests(); return; }
-    items[i] = { type: e.target.value, values: {}, photos: [] };
+    if (e.target.value === '__ktpn') { $('#workComplex').value = 'ktpn'; $('#workComplex').onchange(); return; }
+    if (e.target.value === items[i].type) return;
+    if (hasData(items[i]) && !confirm('Сменить вид испытания? Заполненный вариант будет сохранён, его можно восстановить обратным выбором.')) { drawTests(); return; }
+    items[i] = changeItemType(items[i], e.target.value);
     drawDevs();
   };
   // Выбор человека; «+ Новый человек…» спрашивает фамилию и добавляет в список
@@ -1324,12 +1323,16 @@ async function viewEdit(role, id) {
     const all = await dbAll();
     const nextNo = 'З-' + (Math.max(100, ...all.map(x => parseInt(String(x.number).replace(/\D/g, '')) || 0)) + 1);
     const typesChanged = !old || old.items.map(i => i.type).join() !== goodItems.map(i => i.type).join();
+    const latest = id ? await dbGet(id) : null;
+    if (latest) mergeUnchangedItems(items, old, latest);
     const saved = {
-      ...(old || { id: 't' + Date.now(), number: nextNo, created: Date.now(), status: 'new', briefing: { checked: [] } }),
+      ...(latest || old || { id: 't' + Date.now(), number: nextNo, created: Date.now(), status: 'new', briefing: { checked: [] } }),
       object: fd.object.trim(), address: fd.address.trim(), equipment: fd.equipment.trim(), date: fd.date, comment: fd.comment.trim(),
       items: goodItems, crew, devices: [...devSel], devAuto
     };
-    saved.assignedMaster = fd.assignedMaster.trim(); saved.assignedElectrician = fd.assignedElectrician.trim(); saved.complex = $('#workComplex').value;
+    saved.complex = $('#workComplex').value;
+    if (!old || JSON.stringify(crew) !== JSON.stringify(old.crew)) saved.assignedElectrician = crew.members[0] || crew.foreman || '';
+    if (latest && typesChanged) await docPut({id: 'revision-' + crypto.randomUUID(), kind: 'task_revision', created: Date.now(), task: latest});
     saved.createdBy ||= me(); saved.createdByRole ||= role;
     // В каждый протокол — только подходящие этому испытанию приборы (если там ещё пусто)
     for (const it of goodItems) {
@@ -1455,6 +1458,7 @@ async function viewBossList() {
   app.innerHTML = `
     ${secHTML}
     <a class="btn accent" href="#/b/new">+ Новая заявка</a><div class="gap"></div>${notifyBtnHTML()}
+    <div class="card"><h3>Журналы и СИЗ</h3><div class="tiles">${Object.entries(REGISTERS).map(([kind,title]) => tile('#/b/registers/' + kind, 'permit', title)).join('')}</div></div>
     ${filterHTML(filterB, all, true)}
     ${filterB === 'archive' ? archiveHTML(all) : (applyFilter(all, filterB).map(bossCard).join('') || '<div class="card meta">Здесь заявок нет.</div>')}`;
   bindNotifyBtn();
@@ -1476,6 +1480,7 @@ function protocolHTML(it, k, n, inner) {
   const secs = wt.form.filter(sec => secVisible(sec, v) && !(inner && (sec === wt.form[0] || sec.title === 'Заключение'))).map(sec => {
     const rows = expand(sec.fields, v).flatMap(f => {
       if (f.type === 'calc') return r[f.id]?.value ? [[f.label, r[f.id].value, f.id]] : [];
+      if (f.type === 'location') return v.latitude && v.longitude ? [['Координаты', `${v.latitude}, ${v.longitude}`, 'latitude']] : [];
       if (f.type === 'checklist' || f.type === 'table') return listRows(f, v, r);
       if (!f.id && f.type !== 'row') return [];
       const list = f.type === 'row' ? rowChildren(f) : [f];
@@ -1526,7 +1531,7 @@ function paperHTML(t, it, k) {
   const ndRef = sec => {
     if (!sec.ref) return '';
     const ri = N?.map[sec.ref - 1], rd = ri >= 0 ? `РД 34.45-51.300-97 п. ${N.rd[ri].n}` : '', pue = `ПУЭ п. ${wt.code}, пункт ${sec.ref}`;
-    return v.mode === 'M' ? rd || pue : v.mode === 'P' ? pue : [pue, rd].filter(Boolean).join('; ');
+    return isRD(v) ? rd || pue : pue;
   };
   const ndVal = sec => (typeof sec.nd === 'function' ? sec.nd(v) : sec.nd) || normText(sec, v, r) || 'по инструкции завода-изготовителя';
   const secs = wt.form.filter(sec => sec.ref && secVisible(sec, v));
@@ -1552,7 +1557,7 @@ function paperHTML(t, it, k) {
       <li>Место проведения испытаний: ${blankOr(v.place || t.address || t.object, '________')}</li>
       <li>${esc(b.p2)}</li>
       <li>${esc(b.p3)}</li>
-      <li>Цель испытаний: ${v.mode === 'M' ? 'контрольные' : v.mode === 'P' ? 'приёмо-сдаточные' : '<span class="empty-set">не выбрана</span>'}.</li>
+      <li>Цель испытаний: ${v.mode ? esc(optText({options: MODES}, v.mode)) : '<span class="empty-set">не выбрана</span>'}.</li>
       <li>Климатические условия: ${climate || '<span class="empty-set">не указаны</span>'}.</li>
       <li>Испытания выполнены в соответствии с Методикой ${blankOr(b.methods[wt.code], '№ __')}${b.approved ? ', ' + esc(b.approved) : ''}.</li>
       <li>${esc(b.p7)}</li>
@@ -1884,12 +1889,14 @@ async function viewDeviceEdit(role, id) {
 let swipeNav = null, touch0 = null;
 document.addEventListener('touchstart', e => {
   const el = e.target;
-  touch0 = swipeNav && !el.closest('input, select, textarea, .subtabs, .ntbl, pre, .chips, .swipe-row') ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+  touch0 = swipeNav && !el.closest('input, select, textarea, table, .ptbl, .row-wrap, .tbl, .subtabs, .ntbl, pre, .chips, .swipe-row') ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
 }, { passive: true });
 document.addEventListener('touchend', e => {
   if (!touch0 || !swipeNav) return;
   const dx = e.changedTouches[0].clientX - touch0.x, dy = e.changedTouches[0].clientY - touch0.y;
+  const endedInTable = e.target.closest('table, .ptbl, .ntbl, .tbl');
   touch0 = null;
+  if (endedInTable) return;
   if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2) return;
   const to = dx < 0 ? swipeNav.next : swipeNav.prev;
   if (to) location.hash = to;
@@ -1953,5 +1960,5 @@ async function startApp() {
   router();
   syncPending();
   checkBirthdays();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=18').catch(error => { console.error(error); toast('Автономная версия ещё не сохранена. Проверь сеть и обнови страницу.'); });
 }

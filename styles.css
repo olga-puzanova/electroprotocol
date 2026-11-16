@@ -1617,3 +1617,22 @@ main { padding-bottom: 190px; }
   .roles2 .rc-ic .ic { width: 26px; height: 26px; }
 }
 @media print { main { padding-bottom: 0; } }
+/* v18: readable weather and paired insulation measurements. */
+.roles2 { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.hw small { max-width: none; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.35; }
+.hw { min-width: 126px; }
+.home-hello { gap: 12px; }
+.inline-voice { margin: 4px 0 16px; display: grid; gap: 6px; }
+.inline-voice button { white-space: normal; text-align: left; }
+.psgi-dialog { width: min(560px,calc(100% - 24px)); max-height: 85dvh; overflow: auto; border: 0; border-radius: 18px; padding: 22px; color: var(--text,#17263b); }
+.psgi-dialog::backdrop { background: #13233a88; }
+.norm-table { margin: 12px 0; }
+.norm-table summary { cursor: pointer; font-weight: 600; }
+.norm-table p { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media(max-width:560px) {
+ .roles2 .role-card[data-role="e"] { grid-column: auto; display: flex; }
+ .roles2 .role-card[data-role="e"] .rc-ic { margin-bottom: 10px; }
+ .row:has([data-f^="ri_bef_"]) { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+ .row:has([data-f^="ri_bef_"]) .field { min-width: 0; }
+ .row:has([data-f^="ri_bef_"]) .lbl { font-size: 12px; }
+}
