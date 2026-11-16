@@ -468,37 +468,66 @@ const ICONS = {
 };
 const icon = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
 const DAYS = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
-// Погода для главного экрана: без лишних вопросов — только если место уже разрешено или город запомнен
+// Saved coordinates are used before GPS. Requests include JSON reading in the deadline.
+const WEATHER_TIMEOUT = 7000;
+const weatherRequests = new Map();
+async function weatherJSON(url, timeout=WEATHER_TIMEOUT) {
+  const controller=new AbortController();let timer;
+  try {
+    return await Promise.race([
+      (async()=>{const response=await fetch(url,{signal:controller.signal});if(!response.ok)throw new Error('HTTP '+response.status);return response.json();})(),
+      new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('Сервис погоды не ответил за 7 секунд. Нажми «Обновить» или попробуй другую сеть.'));},timeout);})
+    ]);
+  } catch(error) {
+    if (/7 секунд|HTTP/.test(error.message)) throw error;
+    throw new Error('Нет связи с сервисом погоды. Проверь интернет, VPN или другую сеть и нажми «Обновить».');
+  } finally {clearTimeout(timer);}
+}
+const validWeatherLocation=c=>c&&Number.isFinite(c.latitude)&&Number.isFinite(c.longitude)&&Math.abs(c.latitude)<=90&&Math.abs(c.longitude)<=180;
+async function weatherPosition() {
+  let timer;
+  try {return await Promise.race([
+    new Promise((resolve,reject)=>{if(!navigator.geolocation)return reject(new Error('Геолокация недоступна. Выбери город.'));navigator.geolocation.getCurrentPosition(p=>resolve(p.coords),()=>reject(new Error('Место не определено. Разреши геолокацию или выбери город.')),{timeout:6000,maximumAge:3600000,enableHighAccuracy:false});}),
+    new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Телефон не определил место за 6 секунд. Выбери город.')),6000);})
+  ]);}finally{clearTimeout(timer);}
+}
 async function homeWeather(mode) {
-  const old = jget('homeW', null);
-  if (!mode && old && Number.isFinite(old.pressure) && Number.isFinite(old.humidity) && Date.now() - old.at < 30 * 60e3) return old;
-  if (!isOnline()) { if (mode) throw new Error('Нет интернета'); return old; }
-  let c, place = '', why = '';
-  if (mode !== 'city') {
-    let perm = null;
-    try { perm = (await navigator.permissions?.query({ name: 'geolocation' }))?.state; } catch (e) {}
-    // Сам по себе спрашиваем место, только если уже разрешено; по нажатию — всегда
-    if (mode === 'locate' || perm === 'granted') { try { c = await getPos(); } catch (e) { why = e.message; } }
+  const old=jget('homeW',null),saved=jget('weatherLocation',null);
+  const complete=old&&['t','pressure','humidity'].every(k=>Number.isFinite(old[k]));
+  const samePlace=!saved||(validWeatherLocation(saved)&&(old?.locationKey?old.locationKey===saved.latitude.toFixed(3)+','+saved.longitude.toFixed(3):old?.place===(saved.place||'')));
+  if(!mode&&complete&&samePlace&&Date.now()-old.at<30*60e3)return old;
+  if(!isOnline()){if(mode)throw new Error('Нет интернета. Показаны последние сохранённые данные.');return old;}
+  let c=validWeatherLocation(saved)?saved:null;
+  if(mode==='city')c=await cityCoords(true,false);
+  else if(mode==='locate')c=await weatherPosition();
+  else if(!c&&lsGet('weatherCity'))c=await cityCoords(false,true);
+  else if(!c){
+    let granted=false;try{granted=(await navigator.permissions?.query({name:'geolocation'}))?.state==='granted';}catch{}
+    if(granted)c=await weatherPosition();
   }
-  if (!c && !mode) { c = jget('weatherLocation', null); place = c?.place || ''; }
-  if (!c && (lsGet('weatherCity') || mode)) {
-    c = await cityCoords(mode === 'city', !mode, why ? `Место не определилось: ${why}. Введите город или посёлок.` : '');
-    place = c.place;
+  if(!validWeatherLocation(c))throw new Error('Укажи город в блоке погоды или нажми «Моё место».');
+  const place=c.place||'',key=c.latitude.toFixed(3)+','+c.longitude.toFixed(3);
+  lsSet('weatherLocation',JSON.stringify({latitude:c.latitude,longitude:c.longitude,place,city:c.city||''}));
+  if(!weatherRequests.has(key)){
+    const pending=(async()=>{
+      const data=await weatherJSON('https://api.open-meteo.com/v1/forecast?latitude='+c.latitude.toFixed(3)+'&longitude='+c.longitude.toFixed(3)+'&current=temperature_2m,relative_humidity_2m,surface_pressure,weather_code');
+      const w=data.current;
+      if(!w||['temperature_2m','relative_humidity_2m','surface_pressure'].some(k=>w[k]==null||!Number.isFinite(w[k])))throw new Error('Сервис не вернул температуру, давление и влажность. Повтори загрузку.');
+      return {t:Math.round(w.temperature_2m),humidity:Math.round(w.relative_humidity_2m),pressure:Math.round(w.surface_pressure*0.750062),code:w.weather_code,at:Date.now(),observedAt:w.time||'',source:'Open-Meteo'};
+    })();
+    weatherRequests.set(key,pending);pending.finally(()=>{if(weatherRequests.get(key)===pending)weatherRequests.delete(key);}).catch(()=>{});
   }
-  if (!c) return old;
-  lsSet('weatherLocation', JSON.stringify({latitude:c.latitude,longitude:c.longitude,place}));
-  const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.latitude.toFixed(3)}&longitude=${c.longitude.toFixed(3)}&current=temperature_2m,relative_humidity_2m,surface_pressure,weather_code`);
-  if (!response.ok) throw new Error('Сервис погоды не ответил');
-  const w = (await response.json()).current;
-  if (!w || ['temperature_2m','relative_humidity_2m','surface_pressure'].some(k => w[k] == null || !Number.isFinite(w[k]))) throw new Error('Сервис не вернул все условия погоды');
-  const res = { t: Math.round(w.temperature_2m), humidity: Math.round(w.relative_humidity_2m), pressure: Math.round(w.surface_pressure * 0.750062), code: w.weather_code, place: place || '', at: Date.now() };
-  lsSet('homeW', JSON.stringify(res));
+  const res={...await weatherRequests.get(key),place,locationKey:key};
+  // A slower response for the previous place must not replace the newly selected city.
+  const active=jget('weatherLocation',null);
+  if(validWeatherLocation(active)&&active.latitude.toFixed(3)+','+active.longitude.toFixed(3)===key)lsSet('homeW',JSON.stringify(res));
   return res;
 }
 const wIcon = code => code >= 71 && code <= 86 ? 'snow' : code >= 51 ? 'rain' : code >= 2 ? 'cloud' : 'sun';
-function weatherHTML(w) {
-  if (!w) return `<button type="button" class="hw hw-set" data-hw="city">${icon('pin')}<span>Погода —<small>Давление —</small><small>Влажность —</small><small>Указать город</small></span></button>`;
-  return `<button type="button" class="hw hw-set" data-hw="city" title="Сменить город">${icon(wIcon(w.code))}<span><b>${w.t > 0 ? '+' : ''}${w.t}°</b><small>${esc(w.place || 'здесь')}</small><small>${Number.isFinite(w.pressure) ? w.pressure + ' мм рт. ст.' : 'Давление —'}</small><small>${Number.isFinite(w.humidity) ? 'Влажность ' + w.humidity + '%' : 'Влажность —'}</small></span></button>`;
+function weatherHTML(w,notice='') {
+  const valid=w&&Number.isFinite(w.t),stale=valid&&Date.now()-w.at>=30*60e3;
+  const body=valid?`${icon(wIcon(w.code))}<span><b>${w.t>0?'+':''}${w.t}°</b><small>${esc(w.place||'здесь')}</small><small>${Number.isFinite(w.pressure)?w.pressure+' мм рт. ст.':'Давление —'}</small><small>${Number.isFinite(w.humidity)?'Влажность '+w.humidity+'%':'Влажность —'}</small></span>`:`${icon('pin')}<span>Погода —<small>Давление —</small><small>Влажность —</small><small>Указать город</small></span>`;
+  return `<button type="button" class="hw hw-set" data-hw="city" title="Выбрать город">${body}</button><small class="weather-time">${valid?`${stale?'Сохранено':'Загружено'} ${esc(new Date(w.at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}))}`:'Выбери город один раз'}</small><div class="weather-actions"><button type="button" data-hw="refresh">Обновить</button><button type="button" data-hw="locate">Моё место</button></div><p class="weather-status" role="status">${esc(notice)}</p>`;
 }
 const homeTilesHTML = c => tile('#/h/kusty', 'rig', 'Кусты', kustOverdue()) + tile('#/h/docs/permit', 'permit', 'Наряды') + tile('#/h/devices', 'meter', 'Приборы', c.dev) +
   tile('#/h/phones', 'phone', 'Телефоны') + tile('#/h/people', 'people', 'Люди', upcomingBdays(0).length) + tile('#/h/games', 'game', 'Игры');
@@ -527,15 +556,15 @@ function viewRoles() {
   counts().then(c => { const ht = $('#homeTiles');
     if (ht) ht.innerHTML = homeTilesHTML(c);
     const el = $('#homeUnread'); if (el && c.unread) el.innerHTML = `<span class="badge st-pending">Не прочитано: ${c.unread}</span>`; });
-  // Нажатие на погоду: без данных — определить место (или спросить город), с данными — сменить город
-  $('#homeW').onclick = async e => {
-    const b = e.target.closest('[data-hw]'); if (!b || b.disabled) return;
-    const box = $('#homeW'), was = box.innerHTML;
-    b.disabled = true; b.querySelector('span').innerHTML = 'Определяем…';
-    try { const w = await homeWeather(b.dataset.hw); box.innerHTML = weatherHTML(w); if (w) toast(`Погода: ${w.t > 0 ? '+' : ''}${w.t}°${w.place ? ', ' + w.place : ''}`); }
-    catch (err) { box.innerHTML = was; toast(err.message || 'Погода не загрузилась'); }
+  const weatherBox=$('#homeW');let weatherPaint=0;
+  const paintWeather=async mode=>{
+    const sequence=++weatherPaint;
+    weatherBox.innerHTML=weatherHTML(jget('homeW',null),mode==='locate'?'Определяем место…':mode==='city'?'Выбор города…':'Обновляем погоду…');
+    try{const w=await homeWeather(mode);if(weatherBox.isConnected&&sequence===weatherPaint)weatherBox.innerHTML=weatherHTML(w,!isOnline()?'Нет интернета. Последние сохранённые данные.':mode&&w?'Погода обновлена.':'');}
+    catch(error){if(weatherBox.isConnected&&sequence===weatherPaint)weatherBox.innerHTML=weatherHTML(jget('homeW',null),error.message);}
   };
-  homeWeather().then(w => { const el = $('#homeW'); if (el && w) el.innerHTML = weatherHTML(w); }).catch(() => {});
+  weatherBox.onclick=e=>{const button=e.target.closest('[data-hw]');if(button)paintWeather(button.dataset.hw);};
+  paintWeather();
   $('#reset').onclick = async () => {
     if (!confirm('Удалить все заявки и протоколы и вернуть примеры?')) return;
     await dbClear(); await seed(); toast('Демо-данные восстановлены');
@@ -1123,41 +1152,21 @@ function askText(title, msg = '', value = '', placeholder = '') {
     d.querySelector('form').onsubmit = e => { e.preventDefault(); done(inp.value.trim()); };
   });
 }
-async function cityCoords(askAgain, quiet, msg) {
-  let city = askAgain ? '' : lsGet('weatherCity') || '';
-  if (!city && quiet) throw new Error('нет города');
-  if (!city) city = (await askText('Населённый пункт для погоды', msg || 'Введите город или посёлок — он запомнится.', lsGet('weatherCity') || '', 'Например, Сургут') || '').trim();
-  if (!city) throw new Error('Населённый пункт не указан. Введите погоду вручную');
-  const g = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=ru&format=json`)).json();
-  const p = g.results?.[0];
-  if (!p) throw new Error(`Не нашли «${city}». Проверьте название`);
-  lsSet('weatherCity', city);
-  return { latitude: p.latitude, longitude: p.longitude, place: p.name };
+async function cityCoords(askAgain,quiet,msg) {
+  let city=lsGet('weatherCity')||'';
+  if(askAgain||!city&&!quiet){const answer=await askText('Населённый пункт для погоды',msg||'Введите город или посёлок — он запомнится.',city,'Например, Сургут');if(answer===null)throw new Error('Выбор города отменён.');city=answer.trim();}
+  if(!city)throw new Error('Укажи город в блоке погоды на главном экране.');
+  const saved=jget('weatherLocation',null);
+  if(validWeatherLocation(saved)&&(saved.city||saved.place||'').toLocaleLowerCase()===city.toLocaleLowerCase())return saved;
+  const g=await weatherJSON('https://geocoding-api.open-meteo.com/v1/search?name='+encodeURIComponent(city)+'&count=1&language=ru&format=json');
+  const p=g.results?.[0];if(!p)throw new Error('Не нашли «'+city+'». Проверь название города.');
+  lsSet('weatherCity',city);
+  const c={latitude:p.latitude,longitude:p.longitude,place:p.name,city};lsSet('weatherLocation',JSON.stringify(c));return c;
 }
 async function fetchWeather(quiet) {
-  if (quiet) {
-    const w = await homeWeather();
-    if (!w || !Number.isFinite(w.pressure) || !Number.isFinite(w.humidity) || Date.now() - w.at > 30 * 60e3) throw new Error('Настройте погоду на главном экране или введите условия вручную');
-    return { place: w.place, values: { temp_air: String(w.t), humidity: String(w.humidity), pressure: String(w.pressure) } };
-  }
-  if (!isOnline()) throw new Error('Нет интернета. Введите погоду вручную');
-  let c, place = '';
-  try { c = await getPos(); } catch (e) {
-    try { c = await cityCoords(false, quiet, `Место не определилось: ${e.message}. Введите город или посёлок — он запомнится.`); place = c.place; } catch (err) {
-      if (/Не нашли/.test(err.message)) throw err;
-      throw new Error(err.message && !/fetch/i.test(err.message) ? err.message : 'Сервис погоды не ответил. Введите вручную');
-    }
-  }
-  try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${c.latitude.toFixed(3)}&longitude=${c.longitude.toFixed(3)}&current=temperature_2m,relative_humidity_2m,surface_pressure`;
-    const w = (await (await fetch(url)).json()).current;
-    const tC = Math.round(w.temperature_2m);
-    return { place, values: {
-      temp_air: (tC > 0 ? '+' : '') + tC,
-      humidity: String(Math.round(w.relative_humidity_2m)),
-      pressure: String(Math.round(w.surface_pressure * 0.750062)) // гПа → мм рт. ст.
-    }};
-  } catch (e) { throw new Error('Сервис погоды не ответил. Введите вручную'); }
+  const w=await homeWeather(quiet?undefined:'refresh');
+  if(!w||!['t','pressure','humidity'].every(k=>Number.isFinite(w[k]))||Date.now()-w.at>30*60e3)throw new Error('Свежая погода недоступна. Обнови её на главном экране или введи условия вручную.');
+  return {place:w.place,values:{temp_air:String(w.t),humidity:String(w.humidity),pressure:String(w.pressure)}};
 }
 
 // ---------- Создание и изменение заявки (общее для обеих ролей) ----------
@@ -1960,5 +1969,5 @@ async function startApp() {
   router();
   syncPending();
   checkBirthdays();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=18').catch(error => { console.error(error); toast('Автономная версия ещё не сохранена. Проверь сеть и обнови страницу.'); });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=19').catch(error => { console.error(error); toast('Автономная версия ещё не сохранена. Проверь сеть и обнови страницу.'); });
 }

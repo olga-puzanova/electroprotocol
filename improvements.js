@@ -1,17 +1,10 @@
 'use strict';
 
-const APP_RELEASE = 'psgi-2026-11-16-v18';
+const APP_RELEASE = 'psgi-2026-11-16-v19';
 const RELEASE_NOTES = [
-  'Отдельное изменение номеров протоколов и наряда с сохранением измерений и фотографий.',
-  'Автономное сохранение приложения отделено от загрузки PDF паспортов.',
-  'Температура, давление и влажность на главном экране; заполнение пустых условий в протоколе.',
-  'Две роли: электромонтёр и начальник. Журналы и СИЗ — отдельным блоком у начальника.',
-  'КТПН в списке испытаний: комплекс из шести видов работ.',
-  'Тепловизионный контроль — отдельное испытание; сохранённые результаты доступны.',
-  'Освидетельствование и вновь вводимое оборудование, таблицы РД из локального текста.',
-  'кОм и МОм, кнопка ±, координаты трансформатора, номинальные данные конденсаторов.',
-  'Кабель: замеры до/после рядом, схемы фаз, ток при 20 кВ и при испытательном напряжении.',
-  'Голосовой ввод рядом с полем; прокрутка таблиц не переключает протоколы.'
+  'Погода: сохранённый город используется без ожидания GPS, запрос ограничен 7 секундами.',
+  'Кнопки обновления и текущего места, время загрузки и видимая причина ошибки.',
+  'Одинаковые запросы объединены; медленный ответ прежнего города не заменяет новый.'
 ];
 const UNITS_TO_MOHM = { 'кОм': .001, 'МОм': 1, 'ГОм': 1000 };
 function resistanceCanonical(value, unit) {
@@ -342,7 +335,7 @@ function viewBackup(role) {
 
 function viewReleases(role) {
   header('Что нового в ПСГИ', `/${role}/more`);
-  app.innerHTML = `<div class="card"><span class="badge st-sent">Обновление от 16.11.2026</span><h2>ПСГИ · версия 18</h2><ul>${RELEASE_NOTES.map(n => `<li>${esc(n)}</li>`).join('')}</ul><p class="meta">Передача данных между разными устройствами и подключение СКРТ требуют отдельной настройки сервера и доступа.</p></div>`;
+  app.innerHTML = `<div class="card"><span class="badge st-sent">Обновление от 16.11.2026</span><h2>ПСГИ · версия 19</h2><ul>${RELEASE_NOTES.map(n => `<li>${esc(n)}</li>`).join('')}</ul><p class="meta">Передача данных между разными устройствами и подключение СКРТ требуют отдельной настройки сервера и доступа.</p></div>`;
   lsSet('psgiSeenRelease', APP_RELEASE);
 }
 
@@ -447,7 +440,7 @@ async function enhancePage(role, parts) {
   if (parts.length === 0) {
     const note = $('.home-note'); if (note) note.textContent = 'Данные сохраняются на этом устройстве. Перенос и резервные копии — в разделе «Данные». Вход по ролям пока без авторизации.';
     if (lsGet('psgiSeenRelease') !== APP_RELEASE) {
-      const banner = document.createElement('div'); banner.className = 'card release-card'; banner.innerHTML = `<h3>Приложение обновилось: ПСГИ · 18</h3><p class="meta">Сохранение номеров, автономная работа, погода и исправленные формы испытаний.</p><a class="btn ghost small mt" href="#/${role}/releases">Что изменилось</a><button class="btn link small" data-release-seen>Понятно</button>`;
+      const banner = document.createElement('div'); banner.className = 'card release-card'; banner.innerHTML = `<h3>Приложение обновилось: ПСГИ · 19</h3><p class="meta">Исправлена загрузка погоды: меньше ожидания, обновление и понятные ошибки.</p><a class="btn ghost small mt" href="#/${role}/releases">Что изменилось</a><button class="btn link small" data-release-seen>Понятно</button>`;
       app.prepend(banner); banner.querySelector('[data-release-seen]').onclick = () => { lsSet('psgiSeenRelease', APP_RELEASE); banner.remove(); };
     }
     const reset = $('#reset'); if (reset) reset.remove();

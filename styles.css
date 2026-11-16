@@ -1636,3 +1636,13 @@ main { padding-bottom: 190px; }
  .row:has([data-f^="ri_bef_"]) .field { min-width: 0; }
  .row:has([data-f^="ri_bef_"]) .lbl { font-size: 12px; }
 }
+/* Weather status stays readable in the narrow home card. */
+#homeW { flex: 0 0 145px; min-width: 0; }
+#homeW .hw { width: 100%; min-width: 0; }
+.weather-time { display: block; color: #c7d9ec; font-size: 10px; line-height: 1.4; margin-top: 5px; }
+.weather-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.weather-actions button { border: 1px solid #ffffff55; background: #ffffff15; color: white; font: inherit; font-size: 11px; border-radius: 8px; padding: 7px 6px; cursor: pointer; }
+.weather-actions button:focus-visible { outline: 2px solid #f3cd4a; }
+.weather-status { margin: 6px 0 0; color: #ecf4ff; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.weather-status:empty { display: none; }
+@media(max-width:360px) { #homeW { flex-basis: 132px; } .home-hello h2 { font-size: 20px; } }

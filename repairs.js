@@ -173,9 +173,9 @@ enhancePage=async function(role,parts) {
 async function showOfflineReadiness() {
   let status=$('#offlineReadiness');if(!status){status=document.createElement('p');status.id='offlineReadiness';status.className='hint';app.append(status);}
   try{
-    const cache=await caches.open('psgi-v18'),required=['index.html','styles.css','app.js','data.js','norms.js','potee.js','extras.js','kusty.js','manifest.json','icon.svg','improvements.js','repairs.js','pdf-export.js','ideas.js','chat.js','vendor/pdf-lib.min.js','vendor/fontkit.umd.min.js','vendor/NotoSans-Regular.ttf'];
+    const cache=await caches.open('psgi-v19'),required=['index.html','styles.css','app.js','data.js','norms.js','potee.js','extras.js','kusty.js','manifest.json','icon.svg','improvements.js','repairs.js','pdf-export.js','ideas.js','chat.js','vendor/pdf-lib.min.js','vendor/fontkit.umd.min.js','vendor/NotoSans-Regular.ttf'];
     const files=await Promise.all(required.map(file=>cache.match(new URL(file,location.href.split('#')[0]))));
-    const controlled=navigator.serviceWorker?.controller?.scriptURL.includes('v=18');
+    const controlled=navigator.serviceWorker?.controller?.scriptURL.includes('v=19');
     status.textContent=files.every(Boolean)&&controlled?'Приложение сохранено и готово к открытию без интернета. Паспорта сохраняются отдельно после загрузки.':'Подготавливаем автономную версию. Дождись сообщения о готовности при наличии сети.';
   }catch{status.textContent='Браузер не дал проверить автономное сохранение. Открой приложение при наличии сети.';}
 }
