@@ -1,4 +1,4 @@
-const CACHE = 'psgi-v20';
+const CACHE = 'psgi-v21';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'norms.js', 'potee.js', 'extras.js', 'kusty.js', 'manifest.json', 'icon.svg', 'improvements.js', 'repairs.js', 'pdf-export.js', 'ideas.js', 'chat.js', 'vendor/pdf-lib.min.js', 'vendor/fontkit.umd.min.js', 'vendor/NotoSans-Regular.ttf'];
 const MANUAL_FILES = ['manuals/e6-24.pdf','manuals/ptf-1.pdf','manuals/iks-30a.pdf','manuals/kew-6016.pdf','manuals/mpi-530.pdf','manuals/aid-70c.pdf'];
 const shellURLs = new Set(FILES.map(file=>new URL(file,self.registration.scope).href));
@@ -47,3 +47,5 @@ self.addEventListener('notificationclick',event=>{
 // Release 18: 2026-11-16, final shell and forms.
 // Weather v19: saved location, bounded fetch and explicit refresh result.
 // v20: executor registers protocol numbers after completed work; filters preserve reminders.
+// v21: compact matching actions, edit and delete revealed by swipe.
+// v21 final: reading count and actionable checklist share one source.

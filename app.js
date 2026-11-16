@@ -463,6 +463,7 @@ const ICONS = {
   people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2A5 5 0 0 1 21.5 19"/>',
   rig: '<path d="M12 2 7 21M12 2l5 19M8.6 15h6.8M9.8 10h4.4M4 21h16"/><path d="M12 2v3"/>',
   phone: '<path d="M5 3h3.5l1.5 5-2.2 1.4a11 11 0 0 0 6.8 6.8L16 14l5 1.5V19a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2z"/>',
+  edit: '<path d="M15 5l4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   pin: '<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'
 };
@@ -555,7 +556,7 @@ function viewRoles() {
   app.querySelectorAll('[data-role]').forEach(b => b.onclick = () => { location.hash = '/' + b.dataset.role; });
   counts().then(c => { const ht = $('#homeTiles');
     if (ht) ht.innerHTML = homeTilesHTML(c);
-    const el = $('#homeUnread'); if (el && c.unread) el.innerHTML = `<span class="badge st-pending">Не прочитано: ${c.unread}</span>`; });
+    const el = $('#homeUnread'); if (el && c.unread) el.innerHTML = `<span class="badge st-pending">Требует внимания: ${c.unread}</span>`; });
   const weatherBox=$('#homeW');let weatherPaint=0;
   const paintWeather=async mode=>{
     const sequence=++weatherPaint;
@@ -612,12 +613,12 @@ function verState(d) {
 async function counts() {
   const docs = await docsAll();
   const info = docs.filter(d => d.kind === 'info' && docForPerson(d, me()));
-  const unread = info.filter(d => !ackedBy(d, me())).length + quizPending();
+  const readingItems=workerReadingItems(docs,me()),unread=readingItems.length;
   const people = getStaff().filter(n => !/начальник/i.test(staffPos(n)));
   const waiting = info.filter(d => people.some(n => !acksOf(d).some(a => a.name === n))).length;
   const dev = docs.filter(d => d.kind === 'device' && verState(d)[0] && verState(d)[0] !== 'ok').length;
   try { if (navigator.setAppBadge) unread ? navigator.setAppBadge(unread) : navigator.clearAppBadge(); } catch (e) {}
-  return { unread: unread + personalTrainingPending(), waiting: managerUnread(docs), awaitingAcknowledgment: waiting, dev };
+  return { unread, readingItems, waiting: managerUnread(docs), awaitingAcknowledgment: waiting, dev };
 }
 const tile = (href, ic, text, n) => `<a class="tile" href="${href}"><span class="t-ic">${ICONS[ic] ? icon(ic) : ic}</span>${text}${n ? `<b class="tbadge">${n}</b>` : ''}</a>`;
 // Куда «Назад» из общих разделов: с главного экрана (h) — на главный
@@ -1958,5 +1959,5 @@ async function startApp() {
   router();
   syncPending();
   checkBirthdays();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=20').catch(error => { console.error(error); toast('Автономная версия ещё не сохранена. Проверь сеть и обнови страницу.'); });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=21').catch(error => { console.error(error); toast('Автономная версия ещё не сохранена. Проверь сеть и обнови страницу.'); });
 }

@@ -1646,3 +1646,25 @@ main { padding-bottom: 190px; }
 .weather-status { margin: 6px 0 0; color: #ecf4ff; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .weather-status:empty { display: none; }
 @media(max-width:360px) { #homeW { flex-basis: 132px; } .home-hello h2 { font-size: 20px; } }
+/* Compact task actions, with edit and delete revealed together. */
+.swipe-row { background: #e8eef5; }
+.swipe-row.revealed > .swipe-content { transform: translateX(calc(-1 * var(--swipe-reveal,126px))); }
+.swipe-actions { position: absolute; right: 0; top: 0; bottom: 0; z-index: 1; width: var(--swipe-reveal,126px); display: flex; align-items: center; justify-content: center; gap: 6px; visibility: hidden; }
+.swipe-row.revealed > .swipe-actions { visibility: visible; }
+.swipe-actions .swipe-edit, .swipe-actions .swipe-delete { position: static; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; width: 54px; height: 52px; flex: 0 0 54px; border: 0; border-radius: 10px; color: #fff; text-decoration: none; font: inherit; font-size: 10px; line-height: 1.1; cursor: pointer; }
+.swipe-actions .swipe-edit { background: #1769aa; }
+.swipe-actions .swipe-delete { background: #bd2c30; }
+.swipe-actions .ic { width: 20px; height: 20px; }
+.swipe-actions :focus-visible { outline: 3px solid #eab52d; outline-offset: 2px; }
+.task-actions-compact { grid-template-columns: repeat(2,minmax(0,1fr)); align-items: stretch; }
+.task-actions-compact:empty { display: none; }
+.task-actions-compact .btn, .task-extras > .btn, .registration-reminders > .btn, .psgi-dialog .actions .btn { display: flex; align-items: center; justify-content: center; height: 40px; min-height: 40px; padding: 5px 10px; border-radius: 10px; font-size: 12px; line-height: 1.15; margin-top: 0; }
+.task-actions-compact .btn.wide { grid-column: auto; }
+.protocol-number-button { box-shadow: none !important; }
+@media print { .swipe-actions { display: none !important; } }
+.reading-tasks h3 { margin: 0 0 6px; font-size: 16px; }
+.reading-link { display: grid; grid-template-columns: 26px minmax(0,1fr) 12px; align-items: start; gap: 9px; color: #183452; text-decoration: none; padding: 12px 0; border-top: 1px solid #e1e8ef; }
+.reading-link b { display: block; font-size: 14px; line-height: 1.4; }
+.reading-link small { display: block; color: #65758a; font-size: 12px; line-height: 1.45; margin-top: 3px; }
+.reading-number { display: grid; place-items: center; height: 25px; width: 25px; border-radius: 8px; background: #dceeff; color: #135b99; font-size: 12px; font-weight: 700; }
+.reading-link:focus-visible { outline: 2px solid #1769aa; outline-offset: 3px; }

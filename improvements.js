@@ -1,10 +1,11 @@
 'use strict';
 
-const APP_RELEASE = 'psgi-2026-11-16-v20';
+const APP_RELEASE = 'psgi-2026-11-16-v21';
 const RELEASE_NOTES = [
-  'Исполнитель добавляет номер протокола после регистрации на базе: кнопка в выполненной заявке и в напоминании.',
-  'В окне регистрации только номера протоколов; номер наряда остаётся в основной форме.',
-  'Измерения, фотографии и номер наряда сохраняются; чужие выполненные заявки доступны для просмотра.'
+  'Счётчик электромонтёра раскрыт в точный список документов и тестов; отметка ознакомления убирает выполненный пункт.',
+  'Изменить заявку — рядом с урной в меню смахивания влево, в списке и внутри заявки.',
+  'Кнопки регистрации номера и действий заявки уменьшены до общей высоты 40 пикселей.',
+  'Редактирование и удаление доступны начальнику и исполнителям своей заявки.'
 ];
 const UNITS_TO_MOHM = { 'кОм': .001, 'МОм': 1, 'ГОм': 1000 };
 function resistanceCanonical(value, unit) {
@@ -226,7 +227,7 @@ async function viewTraining(role, id) {
   }
   app.innerHTML = `${isManager(role) ? `<form id="trainingForm" class="card"><h3>Назначить сотруднику</h3><label class="field"><span class="lbl">Сотрудник</span><select name="person" required><option value="">Выберите сотрудника</option>${getStaff().map(n => `<option>${esc(n)}</option>`).join('')}</select></label><label class="field"><span class="lbl">Задание</span><select name="kind"><option value="quiz">Повторный тест по ошибкам</option><option value="info">Информация для ознакомления</option></select></label><label class="field"><span class="lbl">Название</span><input name="title" required></label><label class="field"><span class="lbl">Что изучить</span><textarea name="text"></textarea></label><label class="field"><span class="lbl">Выполнить до</span><input type="date" name="due"></label><button class="btn accent">Назначить</button></form>` : `<div class="card"><label class="field"><span class="lbl">Сотрудник</span><select id="trainingPerson"><option value="">Выберите себя</option>${getStaff().map(n => `<option ${n === me() ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label></div>`}
     <a class="btn ghost" href="#/${role}/docs/info">Результаты теста недели и информация</a><div class="gap"></div>${mine.map(t => `<a class="card task" href="#/${role}/training/${t.id}"><div class="top-line"><span>${esc(t.person)}</span><span class="badge ${t.completedAt ? 'st-sent' : 'st-pending'}">${t.completedAt ? 'Выполнено' : 'Нужно выполнить'}</span></div><h3>${esc(t.title)}</h3><p class="meta">${t.due ? 'До ' + fmtDate(t.due) : ''}${t.score != null ? ` · ${t.score} из ${t.questions.length}` : ''}</p></a>`).join('') || '<div class="card meta">Личных заданий пока нет.</div>'}`;
-  const person = $('#trainingPerson'); if (person) person.onchange = () => { lsSet('me', person.value); viewTraining(role); };
+  const person = $('#trainingPerson'); if (person) person.onchange = () => { lsSet('me', person.value); router(); };
   const form = $('#trainingForm'); if (form) form.onsubmit = e => {
     e.preventDefault(); const values = Object.fromEntries(new FormData(form));
     if (!values.person || !values.title.trim()) return;
@@ -335,7 +336,7 @@ function viewBackup(role) {
 
 function viewReleases(role) {
   header('Что нового в ПСГИ', `/${role}/more`);
-  app.innerHTML = `<div class="card"><span class="badge st-sent">Обновление от 16.11.2026</span><h2>ПСГИ · версия 20</h2><ul>${RELEASE_NOTES.map(n => `<li>${esc(n)}</li>`).join('')}</ul><p class="meta">Передача данных между разными устройствами и подключение СКРТ требуют отдельной настройки сервера и доступа.</p></div>`;
+  app.innerHTML = `<div class="card"><span class="badge st-sent">Обновление от 16.11.2026</span><h2>ПСГИ · версия 21</h2><ul>${RELEASE_NOTES.map(n => `<li>${esc(n)}</li>`).join('')}</ul><p class="meta">Передача данных между разными устройствами и подключение СКРТ требуют отдельной настройки сервера и доступа.</p></div>`;
   lsSet('psgiSeenRelease', APP_RELEASE);
 }
 
@@ -368,21 +369,26 @@ function voiceButton() {
   };
 }
 
-function makeSwipeDelete(card, onDelete) {
+function makeSwipeDelete(card, onDelete, editHref) {
   if (card.closest('.swipe-row')) return;
   const wrap = document.createElement('div'); wrap.className = 'swipe-row';
   card.before(wrap); wrap.append(card); card.classList.add('swipe-content');
-  const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'swipe-delete'; remove.setAttribute('aria-label', 'Удалить заявку'); remove.innerHTML = icon('trash'); remove.tabIndex = -1; wrap.append(remove);
-  const more = document.createElement('button'); more.type = 'button'; more.className = 'swipe-menu'; more.textContent = '⋯'; more.setAttribute('aria-label', 'Показать удаление заявки'); wrap.append(more);
-  const show = open => { wrap.classList.toggle('revealed', open); remove.tabIndex = open ? 0 : -1; };
+  const actions=document.createElement('div');actions.className='swipe-actions';wrap.append(actions);
+  if(editHref){const edit=document.createElement('a');edit.className='swipe-edit';edit.href=editHref;edit.setAttribute('aria-label','Изменить заявку');edit.innerHTML=icon('edit')+'<span>Изменить</span>';actions.append(edit);}
+  const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'swipe-delete'; remove.setAttribute('aria-label', 'Удалить заявку'); remove.innerHTML = icon('trash')+'<span>Удалить</span>'; actions.append(remove);
+  wrap.style.setProperty('--swipe-reveal',editHref?'126px':'68px');
+  const more = document.createElement('button'); more.type = 'button'; more.className = 'swipe-menu'; more.textContent = '⋯'; more.setAttribute('aria-label', 'Действия с заявкой'); more.setAttribute('aria-expanded','false'); wrap.append(more);
+  const show = open => { wrap.classList.toggle('revealed', open); actions.inert=!open;actions.setAttribute('aria-hidden',String(!open));more.setAttribute('aria-expanded',String(open)); };
+  show(false);
   more.onclick = e => { e.preventDefault(); show(!wrap.classList.contains('revealed')); };
   remove.onclick = e => { e.preventDefault(); onDelete(); };
   let start;
   card.addEventListener('pointerdown', e => { if (e.target.closest('input,button,select,textarea')) return; start = { x: e.clientX, y: e.clientY, at: Date.now(), moved: false }; });
-  card.addEventListener('pointermove', e => { if (!start) return; const dx = e.clientX - start.x, dy = e.clientY - start.y; if (Math.abs(dy) > 35 && Math.abs(dy) > Math.abs(dx)) { start = null; return; } if (Date.now() - start.at > 180 && dx < -45 && Math.abs(dx) > Math.abs(dy) * 1.5) { start.moved = true; show(true); } });
+  card.addEventListener('pointermove', e => { if (!start) return; const dx = e.clientX - start.x, dy = e.clientY - start.y; if (Math.abs(dy) > 35 && Math.abs(dy) > Math.abs(dx)) { start = null; return; } if (Math.abs(dx) > Math.abs(dy) * 1.5 && (Math.abs(dx)>70 || Date.now()-start.at>180&&Math.abs(dx)>45)) { start.moved=true;show(dx<0); } });
   card.addEventListener('pointerup', () => { if (start && !start.moved) start = null; });
   card.addEventListener('pointercancel', () => { start = null; });
   card.addEventListener('click', e => { if (start?.moved) { e.preventDefault(); e.stopPropagation(); start = null; } else if (wrap.classList.contains('revealed')) { e.preventDefault(); show(false); } }, true);
+  wrap.addEventListener('keydown',e=>{if(e.key==='Escape'){show(false);more.focus();}});
 }
 
 async function enhanceTask(role, id) {
@@ -405,7 +411,12 @@ async function enhanceTask(role, id) {
     };
   }
   const deleteButton = $('#delBtn');
-  if (deleteButton) { const card = deleteButton.closest('.card'); deleteButton.remove(); if (card) makeSwipeDelete(card, () => deleteTask(task, `/${role}`)); }
+  if (deleteButton) {
+    const card=deleteButton.closest('.card'),editLink=card?.querySelector('a[href*="/edit/"]'),editHref=editLink?.getAttribute('href');
+    deleteButton.remove();editLink?.remove();
+    if(card&&(isManager(role)||canManageWorkerTask(task,me())))makeSwipeDelete(card,()=>deleteTask(task,`/${role}`),editHref);
+    card?.querySelector('.actions')?.classList.add('task-actions-compact');
+  }
   if (role === 'e' && location.hash.includes('/form')) {
     const index = +location.hash.split('/')[5] || 0, item = task.items[index]; if (!item) return;
     const target = $('#tab .proto-head');
@@ -440,7 +451,7 @@ async function enhancePage(role, parts) {
   if (parts.length === 0) {
     const note = $('.home-note'); if (note) note.textContent = 'Данные сохраняются на этом устройстве. Перенос и резервные копии — в разделе «Данные». Вход по ролям пока без авторизации.';
     if (lsGet('psgiSeenRelease') !== APP_RELEASE) {
-      const banner = document.createElement('div'); banner.className = 'card release-card'; banner.innerHTML = `<h3>Приложение обновилось: ПСГИ · 20</h3><p class="meta">Номер протокола после регистрации добавляет выполнивший заявку электромонтёр.</p><a class="btn ghost small mt" href="#/${role}/releases">Что изменилось</a><button class="btn link small" data-release-seen>Понятно</button>`;
+      const banner = document.createElement('div'); banner.className = 'card release-card'; banner.innerHTML = `<h3>Приложение обновилось: ПСГИ · 21</h3><p class="meta">Понятный список документов и тестов, компактные кнопки и изменение заявки смахиванием.</p><a class="btn ghost small mt" href="#/${role}/releases">Что изменилось</a><button class="btn link small" data-release-seen>Понятно</button>`;
       app.prepend(banner); banner.querySelector('[data-release-seen]').onclick = () => { lsSet('psgiSeenRelease', APP_RELEASE); banner.remove(); };
     }
     const reset = $('#reset'); if (reset) reset.remove();
@@ -454,7 +465,8 @@ async function enhancePage(role, parts) {
   for (const link of links) {
     const taskId = link.getAttribute('href').split('/task/')[1]?.split('/')[0]; if (!taskId) continue;
     const card = link.closest('.task-c') || link;
-    makeSwipeDelete(card, async () => { const task = await dbGet(taskId); if (task) { await deleteTask(task, `/${role}`); router(); } });
+    const task=await dbGet(taskId);
+    if(task&&(isManager(role)||canManageWorkerTask(task,me())))makeSwipeDelete(card, async () => { const current = await dbGet(taskId); if (current) { await deleteTask(current, `/${role}`); router(); } },`#/${role}/edit/${taskId}`);
   }
   if (role === 'e' && parts.length === 1) {
     const tasks = await dbAll(), pending = tasks.filter(t => needsRegistration(t) && canRegisterProtocol(t,me()));

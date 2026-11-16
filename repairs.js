@@ -23,8 +23,20 @@ function mergeUnchangedItems(items, original, latest) {
     }
   }
 }
+const canManageWorkerTask=(task,name)=>!!name&&(task.submittedBy===name||isTaskAssignedTo(task,name));
+function workerReadingItems(docs,name) {
+  if(!name)return [];
+  const documents=docs.filter(d=>d.kind==='info'&&docForPerson(d,name)&&!ackedBy(d,name)).sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999')||b.created-a.created).map(d=>({id:'doc:'+d.id,title:d.title,href:'#/e/doc/'+d.id,kind:'Документ',action:'Прочитать и нажать «Ознакомлен»',due:d.due||''}));
+  const quiz=quizDoneBy(name)?[]:[{id:'quiz:'+weekNo(),title:'Тест недели',href:'#/e/quiz',kind:'Тест',action:'Ответить на вопросы теста'}];
+  const training=assignedTraining().filter(t=>t.person===name&&!t.completedAt).map(t=>({id:'training:'+t.id,title:t.title,href:'#/e/training/'+t.id,kind:t.kind==='quiz'?'Личный тест':'Личное ознакомление',action:t.kind==='quiz'?'Ответить на вопросы':'Прочитать и нажать «Ознакомлен»',due:t.due||''}));
+  return [...documents,...quiz,...training];
+}
+function readingTasksHTML(items,name) {
+  if(!name)return '<section class="card reading-tasks"><h3>Что нужно прочитать</h3><p class="meta">Выбери себя в поле «Сотрудник» — покажем твои документы и тесты.</p></section>';
+  return `<section class="card reading-tasks"><h3>Требует внимания: ${items.length}</h3><p class="meta">${esc(name)}${items.length?' · Открой нужный пункт ниже.':' · Всё прочитано, тесты выполнены.'}</p>${items.map((item,index)=>`<a class="reading-link" href="${esc(item.href)}"><span class="reading-number">${index+1}</span><span><b>${esc(item.title)}</b><small>${esc(item.kind)}${item.due?' · до '+fmtDate(item.due):''}</small><small>${esc(item.action)}</small></span><span aria-hidden="true">›</span></a>`).join('')}</section>`;
+}
 function canRegisterProtocol(task,name) {
-  return !!name && task.status==='sent' && task.outcome!=='notdone' && task.items.some(i=>!i.skip) && (task.submittedBy===name || isTaskAssignedTo(task,name));
+  return canManageWorkerTask(task,name) && task.status==='sent' && task.outcome!=='notdone' && task.items.some(i=>!i.skip);
 }
 const protocolNumberAction=task=>task.items.some(i=>!i.skip&&!String(i.values.proto_no||'').trim())?'Добавить номер протокола':'Изменить номер протокола';
 async function updateTaskNumbers(id, numbers) {
@@ -156,11 +168,21 @@ document.addEventListener('focusin',event=>{
 const enhanceBefore18=enhancePage;
 enhancePage=async function(role,parts) {
   await enhanceBefore18(role,parts);
+  if(role==='e'&&(parts.length===1||parts[1]==='docs'&&parts[2]==='info'||parts[1]==='training'&&!parts[2])) {
+    const panel=document.createElement('div');panel.innerHTML=readingTasksHTML(workerReadingItems(await docsAll(),me()),me());
+    const profile=app.querySelector('.profile-selector');if(profile)profile.after(panel);else app.prepend(panel);
+  }
+  if(role==='e'&&parts[1]==='doc') {
+    const doc=await docGet(parts[2]);
+    if(doc?.kind==='info'&&me()&&ackedBy(doc,me())) {
+      const pending=workerReadingItems(await docsAll(),me()),link=document.createElement('a');link.className='btn ghost small mt';link.href=pending[0]?.href||'#/e/docs/info';link.textContent=pending.length?`Следующий пункт (${pending.length}): ${pending[0].title}`:'Всё выполнено — к информации';app.append(link);
+    }
+  }
   if(parts[1]==='task') {
     const task=await dbGet(parts[2]);if(!task)return;
-    const editable=role==='b'||task.submittedBy===me()&&!!me()||isTaskAssignedTo(task,me());
-    if(role==='e'&&canRegisterProtocol(task,me())){const button=document.createElement('button');button.type='button';button.className='btn accent mt no-print';button.textContent=protocolNumberAction(task);button.onclick=()=>editTaskNumbers(task.id);(app.querySelector('.actions')||app.querySelector('.task-extras')||app).prepend(button);}
-    if(role==='e'&&!editable){app.querySelectorAll('a[href*="/edit/"],#noSave,#noEdit,#delBtn,.swipe-menu,.swipe-delete,#reopenBtn').forEach(el=>el.remove());}
+    const editable=role==='b'||canManageWorkerTask(task,me());
+    if(role==='e'&&canRegisterProtocol(task,me())){const button=document.createElement('button');button.type='button';button.className='btn accent no-print protocol-number-button';button.textContent=protocolNumberAction(task);button.onclick=()=>editTaskNumbers(task.id);const actions=app.querySelector('.task-actions-compact')||app.querySelector('.actions')||app;actions.prepend(button);}
+    if(role==='e'&&!editable){app.querySelectorAll('a[href*="/edit/"],#noSave,#noEdit,#delBtn,.swipe-menu,.swipe-actions,#reopenBtn').forEach(el=>el.remove());}
   }
   const pm=app.querySelector('[data-f="reg_range"]');
   if(pm){const button=document.createElement('button');button.type='button';button.className='btn ghost small';button.textContent='Вставить ±';pm.after(button);button.onclick=()=>{pm.value=pm.value.startsWith('±')?pm.value:'±'+pm.value.replace(/^[+−-]\s*/,'');pm.dispatchEvent(new Event('input',{bubbles:true}));};}
@@ -175,9 +197,9 @@ enhancePage=async function(role,parts) {
 async function showOfflineReadiness() {
   let status=$('#offlineReadiness');if(!status){status=document.createElement('p');status.id='offlineReadiness';status.className='hint';app.append(status);}
   try{
-    const cache=await caches.open('psgi-v20'),required=['index.html','styles.css','app.js','data.js','norms.js','potee.js','extras.js','kusty.js','manifest.json','icon.svg','improvements.js','repairs.js','pdf-export.js','ideas.js','chat.js','vendor/pdf-lib.min.js','vendor/fontkit.umd.min.js','vendor/NotoSans-Regular.ttf'];
+    const cache=await caches.open('psgi-v21'),required=['index.html','styles.css','app.js','data.js','norms.js','potee.js','extras.js','kusty.js','manifest.json','icon.svg','improvements.js','repairs.js','pdf-export.js','ideas.js','chat.js','vendor/pdf-lib.min.js','vendor/fontkit.umd.min.js','vendor/NotoSans-Regular.ttf'];
     const files=await Promise.all(required.map(file=>cache.match(new URL(file,location.href.split('#')[0]))));
-    const controlled=navigator.serviceWorker?.controller?.scriptURL.includes('v=20');
+    const controlled=navigator.serviceWorker?.controller?.scriptURL.includes('v=21');
     status.textContent=files.every(Boolean)&&controlled?'Приложение сохранено и готово к открытию без интернета. Паспорта сохраняются отдельно после загрузки.':'Подготавливаем автономную версию. Дождись сообщения о готовности при наличии сети.';
   }catch{status.textContent='Браузер не дал проверить автономное сохранение. Открой приложение при наличии сети.';}
 }
