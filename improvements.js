@@ -1,10 +1,10 @@
 'use strict';
 
-const APP_RELEASE = 'psgi-2026-11-16-v19';
+const APP_RELEASE = 'psgi-2026-11-16-v20';
 const RELEASE_NOTES = [
-  'Погода: сохранённый город используется без ожидания GPS, запрос ограничен 7 секундами.',
-  'Кнопки обновления и текущего места, время загрузки и видимая причина ошибки.',
-  'Одинаковые запросы объединены; медленный ответ прежнего города не заменяет новый.'
+  'Исполнитель добавляет номер протокола после регистрации на базе: кнопка в выполненной заявке и в напоминании.',
+  'В окне регистрации только номера протоколов; номер наряда остаётся в основной форме.',
+  'Измерения, фотографии и номер наряда сохраняются; чужие выполненные заявки доступны для просмотра.'
 ];
 const UNITS_TO_MOHM = { 'кОм': .001, 'МОм': 1, 'ГОм': 1000 };
 function resistanceCanonical(value, unit) {
@@ -335,7 +335,7 @@ function viewBackup(role) {
 
 function viewReleases(role) {
   header('Что нового в ПСГИ', `/${role}/more`);
-  app.innerHTML = `<div class="card"><span class="badge st-sent">Обновление от 16.11.2026</span><h2>ПСГИ · версия 19</h2><ul>${RELEASE_NOTES.map(n => `<li>${esc(n)}</li>`).join('')}</ul><p class="meta">Передача данных между разными устройствами и подключение СКРТ требуют отдельной настройки сервера и доступа.</p></div>`;
+  app.innerHTML = `<div class="card"><span class="badge st-sent">Обновление от 16.11.2026</span><h2>ПСГИ · версия 20</h2><ul>${RELEASE_NOTES.map(n => `<li>${esc(n)}</li>`).join('')}</ul><p class="meta">Передача данных между разными устройствами и подключение СКРТ требуют отдельной настройки сервера и доступа.</p></div>`;
   lsSet('psgiSeenRelease', APP_RELEASE);
 }
 
@@ -440,7 +440,7 @@ async function enhancePage(role, parts) {
   if (parts.length === 0) {
     const note = $('.home-note'); if (note) note.textContent = 'Данные сохраняются на этом устройстве. Перенос и резервные копии — в разделе «Данные». Вход по ролям пока без авторизации.';
     if (lsGet('psgiSeenRelease') !== APP_RELEASE) {
-      const banner = document.createElement('div'); banner.className = 'card release-card'; banner.innerHTML = `<h3>Приложение обновилось: ПСГИ · 19</h3><p class="meta">Исправлена загрузка погоды: меньше ожидания, обновление и понятные ошибки.</p><a class="btn ghost small mt" href="#/${role}/releases">Что изменилось</a><button class="btn link small" data-release-seen>Понятно</button>`;
+      const banner = document.createElement('div'); banner.className = 'card release-card'; banner.innerHTML = `<h3>Приложение обновилось: ПСГИ · 20</h3><p class="meta">Номер протокола после регистрации добавляет выполнивший заявку электромонтёр.</p><a class="btn ghost small mt" href="#/${role}/releases">Что изменилось</a><button class="btn link small" data-release-seen>Понятно</button>`;
       app.prepend(banner); banner.querySelector('[data-release-seen]').onclick = () => { lsSet('psgiSeenRelease', APP_RELEASE); banner.remove(); };
     }
     const reset = $('#reset'); if (reset) reset.remove();
@@ -457,8 +457,8 @@ async function enhancePage(role, parts) {
     makeSwipeDelete(card, async () => { const task = await dbGet(taskId); if (task) { await deleteTask(task, `/${role}`); router(); } });
   }
   if (role === 'e' && parts.length === 1) {
-    const tasks = await dbAll(), pending = tasks.filter(t => needsRegistration(t) && (!me() || t.submittedBy === me() || t.assignedElectrician === me() || crewNames(t).includes(me())));
-    if (pending.length) { const panel = document.createElement('div'); panel.className = 'card registration-reminders'; panel.innerHTML = `<h3>Зарегистрировать и передать протоколы</h3>${pending.map(t => `<a class="reminder-link" href="#/e/task/${t.id}/form">${esc(t.number)} · ${esc(t.object)}<small>${t.items.some(i => !i.skip && !i.values.proto_no) ? 'Внести номера протоколов' : 'Передать PDF с номерами'}</small></a>`).join('')}`; app.prepend(panel); }
+    const tasks = await dbAll(), pending = tasks.filter(t => needsRegistration(t) && canRegisterProtocol(t,me()));
+    if (pending.length) { const panel = document.createElement('div'); panel.className = 'card registration-reminders'; panel.innerHTML = `<h3>Зарегистрировать и передать протоколы</h3>${pending.map(t => `<a class="reminder-link" href="#/e/task/${t.id}/form">${esc(t.number)} · ${esc(t.object)}<small>${t.items.some(i => !i.skip && !i.values.proto_no) ? 'Внести номера протоколов' : 'Передать PDF с номерами'}</small></a><button type="button" class="btn accent small" data-registration-numbers="${esc(t.id)}">${protocolNumberAction(t)}</button>`).join('')}`; panel.querySelectorAll('[data-registration-numbers]').forEach(button=>button.onclick=()=>editTaskNumbers(button.dataset.registrationNumbers)); app.prepend(panel); }
   }
   if (parts[1] === 'devices' || parts[1] === 'device') await enhanceManuals(role, parts[1] === 'device' ? parts[2] : null);
   // All dates in month-only history/group headings also include their year.

@@ -678,7 +678,7 @@ async function viewElList() {
           <a class="btn accent small" href="#/e/task/${t.id}">${t.status === 'new' ? 'Приступить к работе' : 'Продолжить'}</a></div>` : ''}</div>`;
     }).join('') : `<div class="card meta">${filterE === 'work' ? 'Новых заявок нет.' : 'Здесь заявок нет.'}</div>`}`;
   bindNotifyBtn();
-  app.querySelectorAll('[data-filter]').forEach(b => b.onclick = () => { filterE = b.dataset.filter; viewElList(); });
+  app.querySelectorAll('[data-filter]').forEach(b => b.onclick = () => { filterE = b.dataset.filter; router(); });
   // «Не выполнялась» прямо из списка, не открывая заявку
   app.querySelectorAll('[data-nd]').forEach(b => b.onclick = async () => {
     const t = all.find(x => x.id === b.dataset.nd);
@@ -873,9 +873,6 @@ function renderForm(box, t, k) {
   html += `<div class="card proto-head"><span class="meta">Протокол ${k + 1} из ${n} · ${esc(typeCode(it.type))}</span><h3>${esc(typeName(it.type))}</h3>
     ${ro ? '' : it.skip ? `<button class="btn ghost small mt" id="unskipBtn">Вернуть испытание</button>`
       : `<button class="btn ghost small mt" id="skipBtn">Это испытание не выполнялось</button>`}</div>`;
-  // После отправки номер протокола можно вписать или исправить (его дают при регистрации на базе)
-  if (ro && t.status === 'sent' && !it.skip) html += `<div class="card"><label class="field"><span class="lbl">Номер протокола</span>
-    <input id="noEdit" value="${esc(v.proto_no)}" autocomplete="off"></label><button class="btn ghost small" id="noSave">Сохранить номер</button></div>`;
   if (it.skip) {
     html += `<div class="banner warn">Испытание не проводилось. Причина: ${esc(it.reason)}</div>`;
   } else {
@@ -898,14 +895,6 @@ function renderForm(box, t, k) {
     if (!openSecs[key]) openSecs[key] = new Set(wt.form.map((_, i) => i).filter(i => isSecOpen(t, k, i, wt, v)));
     openSecs[key][e.target.open ? 'add' : 'delete'](+e.target.dataset.sec);
   }, true);
-  const noSave = $('#noSave');
-  if (noSave) noSave.onclick = async () => {
-    const old = v.proto_no;
-    v.proto_no = $('#noEdit').value.trim();
-    shareValues(t, k, 'proto_no', old);
-    t.editedAt = Date.now();
-    await dbPut(t); toast('Номер протокола сохранён'); router();
-  };
   if (ro) return;
   if (highlightMissing) { highlightMissing = false; markMissing(box, wt, v); }
 
@@ -1471,7 +1460,7 @@ async function viewBossList() {
     ${filterHTML(filterB, all, true)}
     ${filterB === 'archive' ? archiveHTML(all) : (applyFilter(all, filterB).map(bossCard).join('') || '<div class="card meta">Здесь заявок нет.</div>')}`;
   bindNotifyBtn();
-  app.querySelectorAll('[data-filter]').forEach(b => b.onclick = () => { filterB = b.dataset.filter; viewBossList(); });
+  app.querySelectorAll('[data-filter]').forEach(b => b.onclick = () => { filterB = b.dataset.filter; router(); });
 }
 
 // Строки отчёта для списка с галочками и таблицы
@@ -1969,5 +1958,5 @@ async function startApp() {
   router();
   syncPending();
   checkBirthdays();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=19').catch(error => { console.error(error); toast('Автономная версия ещё не сохранена. Проверь сеть и обнови страницу.'); });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=20').catch(error => { console.error(error); toast('Автономная версия ещё не сохранена. Проверь сеть и обнови страницу.'); });
 }

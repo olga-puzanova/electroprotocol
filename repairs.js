@@ -23,27 +23,29 @@ function mergeUnchangedItems(items, original, latest) {
     }
   }
 }
-async function updateTaskNumbers(id, numbers, permit) {
+function canRegisterProtocol(task,name) {
+  return !!name && task.status==='sent' && task.outcome!=='notdone' && task.items.some(i=>!i.skip) && (task.submittedBy===name || isTaskAssignedTo(task,name));
+}
+const protocolNumberAction=task=>task.items.some(i=>!i.skip&&!String(i.values.proto_no||'').trim())?'Добавить номер протокола':'Изменить номер протокола';
+async function updateTaskNumbers(id, numbers) {
   const task=await dbGet(id); if (!task) throw new Error('Заявка не найдена');
+  if(!canRegisterProtocol(task,me()))throw new Error('Номер добавляет сотрудник, выполнивший заявку. Выбери себя в разделе электромонтёра.');
   await docPut({id:'revision-'+crypto.randomUUID(),kind:'task_revision',created:Date.now(),task:structuredClone(task)});
   for (const [key,value] of Object.entries(numbers)) {
-    const item=task.items.find(i=>i.id===key); if (item) item.values.proto_no=String(value).trim();
-  }
-  if (permit !== undefined && String(permit).trim() !== permitOf(task)) {
-    task.permit=String(permit).trim();
-    for (const item of task.items) item.values.permit=task.permit;
+    const item=task.items.find(i=>i.id===key); if (item&&!item.skip) item.values.proto_no=String(value).trim();
   }
   task.editedAt=Date.now(); await dbPut(task); return task;
 }
 async function editTaskNumbers(id) {
   const task=await dbGet(id); if (!task) return;
+  if(!canRegisterProtocol(task,me())){toast('Выбери сотрудника, выполнившего эту заявку, в разделе электромонтёра.');return;}
   const dialog=document.createElement('dialog'); dialog.className='psgi-dialog';
-  dialog.innerHTML=`<form><h2>Номера протоколов и наряда</h2><p class="hint">Измерения, фотографии и остальные поля сохранятся.</p>${task.items.filter(i=>!i.skip).map(i=>`<label class="field"><span class="lbl">Номер протокола: ${esc(typeName(i.type))}</span><input data-number-item="${esc(i.id)}" value="${esc(i.values.proto_no || '')}" autocomplete="off"></label>`).join('')}<label class="field"><span class="lbl">Номер наряда-допуска / распоряжения для заявки</span><input name="permit" value="${esc(permitOf(task))}" autocomplete="off"></label><div class="actions"><button class="btn accent" type="submit">Сохранить номера</button><button class="btn ghost" type="button" data-cancel>Отмена</button></div><p class="hint" role="status"></p></form>`;
+  dialog.innerHTML=`<form><h2>Номер протокола после регистрации</h2><p class="hint">Внеси номер из журнала регистрации на базе. Измерения, фотографии и номер наряда сохранятся.</p>${task.items.filter(i=>!i.skip).map(i=>`<label class="field"><span class="lbl">Номер протокола: ${esc(typeName(i.type))}</span><input data-number-item="${esc(i.id)}" value="${esc(i.values.proto_no || '')}" autocomplete="off"></label>`).join('')}<div class="actions"><button class="btn accent" type="submit">Сохранить номера</button><button class="btn ghost" type="button" data-cancel>Отмена</button></div><p class="hint" role="status"></p></form>`;
   document.body.append(dialog); dialog.showModal(); dialog.onclose=()=>dialog.remove();
   dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();
   dialog.querySelector('form').onsubmit=async e=>{
     e.preventDefault(); const button=e.target.querySelector('[type=submit]'); button.disabled=true;
-    try { const numbers=Object.fromEntries([...dialog.querySelectorAll('[data-number-item]')].map(input=>[input.dataset.numberItem,input.value])); await updateTaskNumbers(id,numbers,e.target.elements.permit.value); dialog.close(); await router(); toast('Номера сохранены. Данные испытаний сохранены.'); }
+    try { const numbers=Object.fromEntries([...dialog.querySelectorAll('[data-number-item]')].map(input=>[input.dataset.numberItem,input.value])); await updateTaskNumbers(id,numbers); dialog.close(); await router(); toast('Номера протоколов сохранены. Данные испытаний сохранены.'); }
     catch(error) { dialog.querySelector('[role=status]').textContent=error.message; button.disabled=false; }
   };
 }
@@ -156,8 +158,8 @@ enhancePage=async function(role,parts) {
   await enhanceBefore18(role,parts);
   if(parts[1]==='task') {
     const task=await dbGet(parts[2]);if(!task)return;
-    const editable=role==='b'||isTaskAssignedTo(task,me());
-    if(editable){const button=document.createElement('button');button.type='button';button.className='btn accent mt no-print';button.textContent='Добавить / изменить номера протоколов и наряда';button.onclick=()=>editTaskNumbers(task.id);(app.querySelector('.actions')||app.querySelector('.task-extras')||app).prepend(button);}
+    const editable=role==='b'||task.submittedBy===me()&&!!me()||isTaskAssignedTo(task,me());
+    if(role==='e'&&canRegisterProtocol(task,me())){const button=document.createElement('button');button.type='button';button.className='btn accent mt no-print';button.textContent=protocolNumberAction(task);button.onclick=()=>editTaskNumbers(task.id);(app.querySelector('.actions')||app.querySelector('.task-extras')||app).prepend(button);}
     if(role==='e'&&!editable){app.querySelectorAll('a[href*="/edit/"],#noSave,#noEdit,#delBtn,.swipe-menu,.swipe-delete,#reopenBtn').forEach(el=>el.remove());}
   }
   const pm=app.querySelector('[data-f="reg_range"]');
@@ -173,9 +175,9 @@ enhancePage=async function(role,parts) {
 async function showOfflineReadiness() {
   let status=$('#offlineReadiness');if(!status){status=document.createElement('p');status.id='offlineReadiness';status.className='hint';app.append(status);}
   try{
-    const cache=await caches.open('psgi-v19'),required=['index.html','styles.css','app.js','data.js','norms.js','potee.js','extras.js','kusty.js','manifest.json','icon.svg','improvements.js','repairs.js','pdf-export.js','ideas.js','chat.js','vendor/pdf-lib.min.js','vendor/fontkit.umd.min.js','vendor/NotoSans-Regular.ttf'];
+    const cache=await caches.open('psgi-v20'),required=['index.html','styles.css','app.js','data.js','norms.js','potee.js','extras.js','kusty.js','manifest.json','icon.svg','improvements.js','repairs.js','pdf-export.js','ideas.js','chat.js','vendor/pdf-lib.min.js','vendor/fontkit.umd.min.js','vendor/NotoSans-Regular.ttf'];
     const files=await Promise.all(required.map(file=>cache.match(new URL(file,location.href.split('#')[0]))));
-    const controlled=navigator.serviceWorker?.controller?.scriptURL.includes('v=19');
+    const controlled=navigator.serviceWorker?.controller?.scriptURL.includes('v=20');
     status.textContent=files.every(Boolean)&&controlled?'Приложение сохранено и готово к открытию без интернета. Паспорта сохраняются отдельно после загрузки.':'Подготавливаем автономную версию. Дождись сообщения о готовности при наличии сети.';
   }catch{status.textContent='Браузер не дал проверить автономное сохранение. Открой приложение при наличии сети.';}
 }
