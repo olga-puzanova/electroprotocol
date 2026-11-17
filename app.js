@@ -1983,5 +1983,5 @@ async function startApp() {
   router();
   syncPending();
   checkBirthdays();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=22').catch(error => { console.error(error); toast('Автономная версия ещё не сохранена. Проверь сеть и обнови страницу.'); });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=23').catch(error => { console.error(error); toast('Автономная версия ещё не сохранена. Проверь сеть и обнови страницу.'); });
 }

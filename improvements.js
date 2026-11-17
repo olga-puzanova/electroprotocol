@@ -1,16 +1,7 @@
 'use strict';
 
-const APP_RELEASE = 'psgi-2026-11-17-v22';
-const RELEASE_NOTES = [
-  'В разделах добавлено «Нормированное задание по месяцам».',
-  'Редактирование объёмов, норм и коэффициентов 0,91–0,97, сохранение на устройстве и пересчёт всех строк.',
-  'Выгрузка в Excel с формулами, загрузка/резервная копия задания и перенос плана на другой месяц.',
-  'Полный реестр приборов по фотографиям и ещё 15 руководств PDF с ознакомлением.',
-  'Автосохранение незавершённой заявки, доступ ответственного руководителя, телефоны и табельные номера.',
-  'Общая геопривязка заявки и создание нового куста, исправление кнопки «Моё место».',
-  'ОПН: заводские номера по фазам; нормы строго по пунктам; наглядные инструкции.',
-  '20 новых технических рацпредложений; прежние планы сохранены в архиве.'
-];
+const APP_RELEASE = 'psgi-2026-11-17-v23';
+const RELEASE_NOTES = ['Ноябрьское нормированное задание автоматически доступно по фотографиям: 41 строка с объёмами, нормами и формулами. Загружать файл не нужно. Сохранённые задания не перезаписываются.'];
 const UNITS_TO_MOHM = { 'кОм': .001, 'МОм': 1, 'ГОм': 1000 };
 function resistanceCanonical(value, unit) {
   if (!String(value ?? '').trim()) return '';
@@ -455,7 +446,7 @@ async function enhancePage(role, parts) {
   if (parts.length === 0) {
     const note = $('.home-note'); if (note) note.textContent = 'Данные сохраняются на этом устройстве. Перенос и резервные копии — в разделе «Данные». Вход по ролям пока без авторизации.';
     if (lsGet('psgiSeenRelease') !== APP_RELEASE) {
-      const banner = document.createElement('div'); banner.className = 'card release-card'; banner.innerHTML = `<h3>Приложение обновилось: ПСГИ · 22</h3><p class="meta">Нормированное задание по месяцам: таблица, сохранение и Excel с формулами.</p><a class="btn ghost small mt" href="#/${role}/releases">Что изменилось</a><button class="btn link small" data-release-seen>Понятно</button>`;
+      const banner = document.createElement('div'); banner.className = 'card release-card'; banner.innerHTML = `<h3>Приложение обновилось: ПСГИ · 23</h3><p class="meta">Нормированное задание по месяцам: таблица, сохранение и Excel с формулами.</p><a class="btn ghost small mt" href="#/${role}/releases">Что изменилось</a><button class="btn link small" data-release-seen>Понятно</button>`;
       app.prepend(banner); banner.querySelector('[data-release-seen]').onclick = () => { lsSet('psgiSeenRelease', APP_RELEASE); banner.remove(); };
     }
     const reset = $('#reset'); if (reset) reset.remove();
