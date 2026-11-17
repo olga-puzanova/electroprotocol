@@ -4,7 +4,7 @@
 function isTaskAssignedTo(task, name) {
   if (!name) return false;
   const members = task.crew?.members || [];
-  return task.assignedElectrician === name || members.includes(name) || task.crew?.foreman === name || (!members.length && task.createdByRole === 'e' && task.createdBy === name);
+  return task.assignedElectrician === name || members.includes(name) || task.crew?.respHead === name || task.crew?.foreman === name || (!members.length && task.createdByRole === 'e' && task.createdBy === name);
 }
 function changeItemType(item, type) {
   if (item.type === type) return structuredClone(item);
@@ -120,9 +120,9 @@ for (const norm of Object.values(NORMS)) for (const entry of norm.rd) {
   const matches=[...entry.t.matchAll(/Таблица\s+(\d+\.\d+)(?!\d)/g)];
   matches.forEach((match,index)=>{const text=entry.t.slice(match.index,matches[index+1]?.index??entry.t.length);const old=normTables.get(match[1]);if(!old||text.length>old.length)normTables.set(match[1],text);});
 }
-function normReferencesHTML(wt,text) {
+function normReferencesHTML(wt,text,section) {
   const references=[...text.matchAll(/табл\.\s*(\d+\.\d+)/gi)].map(m=>m[1]);
-  if (wt.code==='1.8.16') references.push('6.1','6.2');
+  if (wt.code==='1.8.16'&&section?.ref===3) references.push('6.1','6.2');
   const links=[...new Set(references)].filter(id=>normTables.has(id));
   return `${links.map(id=>`<details class="norm-table"><summary>Таблица ${id} — открыть сохранённый текст</summary>${localNormTableHTML(id)}</details>`).join('')}<p class="hint">Сохранённая выдержка РД; перед работой проверь применимость редакции и программу испытаний.</p><p><a href="https://www.tdtransformator.ru/files/383/rd_34-45-51-300-97.pdf" target="_blank" rel="noopener">Полный текст РД в источнике (6-е издание)</a></p>`;
 }
@@ -184,8 +184,6 @@ enhancePage=async function(role,parts) {
     if(role==='e'&&canRegisterProtocol(task,me())){const button=document.createElement('button');button.type='button';button.className='btn accent no-print protocol-number-button';button.textContent=protocolNumberAction(task);button.onclick=()=>editTaskNumbers(task.id);const actions=app.querySelector('.task-actions-compact')||app.querySelector('.actions')||app;actions.prepend(button);}
     if(role==='e'&&!editable){app.querySelectorAll('a[href*="/edit/"],#noSave,#noEdit,#delBtn,.swipe-menu,.swipe-actions,#reopenBtn').forEach(el=>el.remove());}
   }
-  const pm=app.querySelector('[data-f="reg_range"]');
-  if(pm){const button=document.createElement('button');button.type='button';button.className='btn ghost small';button.textContent='Вставить ±';pm.after(button);button.onclick=()=>{pm.value=pm.value.startsWith('±')?pm.value:'±'+pm.value.replace(/^[+−-]\s*/,'');pm.dispatchEvent(new Event('input',{bubbles:true}));};}
   app.querySelectorAll('[data-geolocate]').forEach(button=>button.onclick=async()=>{
     button.disabled=true;button.textContent='Определяю координаты…';
     try{const c=await getPos(),task=await dbGet(parts[2]),index=+parts[4]||0;if(!task)return;task.items[index].values.latitude=String(c.latitude);task.items[index].values.longitude=String(c.longitude);await dbPut(task);if(button.isConnected)await router();toast('Координаты сохранены');}
@@ -197,9 +195,9 @@ enhancePage=async function(role,parts) {
 async function showOfflineReadiness() {
   let status=$('#offlineReadiness');if(!status){status=document.createElement('p');status.id='offlineReadiness';status.className='hint';app.append(status);}
   try{
-    const cache=await caches.open('psgi-v21'),required=['index.html','styles.css','app.js','data.js','norms.js','potee.js','extras.js','kusty.js','manifest.json','icon.svg','improvements.js','repairs.js','pdf-export.js','ideas.js','chat.js','vendor/pdf-lib.min.js','vendor/fontkit.umd.min.js','vendor/NotoSans-Regular.ttf'];
+    const cache=await caches.open('psgi-v22'),required=['index.html','styles.css','app.js','data.js','norms.js','potee.js','extras.js','kusty.js','manifest.json','icon.svg','improvements.js','repairs.js','monthly.js','device-registry.js','field-work.js','engineering-ideas.js','visual-guides.js','pdf-export.js','ideas.js','chat.js','vendor/pdf-lib.min.js','vendor/fontkit.umd.min.js','vendor/NotoSans-Regular.ttf'];
     const files=await Promise.all(required.map(file=>cache.match(new URL(file,location.href.split('#')[0]))));
-    const controlled=navigator.serviceWorker?.controller?.scriptURL.includes('v=21');
+    const controlled=navigator.serviceWorker?.controller?.scriptURL.includes('v=22');
     status.textContent=files.every(Boolean)&&controlled?'Приложение сохранено и готово к открытию без интернета. Паспорта сохраняются отдельно после загрузки.':'Подготавливаем автономную версию. Дождись сообщения о готовности при наличии сети.';
   }catch{status.textContent='Браузер не дал проверить автономное сохранение. Открой приложение при наличии сети.';}
 }

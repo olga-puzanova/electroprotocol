@@ -2,6 +2,8 @@
 // Люди и дни рождения, кусты скважин с картой и сроками испытаний, отправка протокола в мессенджер.
 
 // ===================== Люди и дни рождения =====================
+const staffContacts=()=>jget('staffContact',{});
+function saveStaffContact(name,key,value){const contacts=staffContacts();contacts[name]={...(contacts[name]||{}),[key]:value};lsSet('staffContact',JSON.stringify(contacts));}
 const bdays = () => jget('staffBday', {});
 function setBday(name, date) { const m = bdays(); if (date) m[name] = date; else delete m[name]; lsSet('staffBday', JSON.stringify(m)); }
 // Через сколько дней день рождения (0 — сегодня)
@@ -33,14 +35,18 @@ function viewPeople(role) {
   const staff = getStaff().slice().sort((a, b) => a.localeCompare(b, 'ru'));
   const bd = bdays();
   app.innerHTML = `${bdayBannerHTML()}
-    <div class="card"><p class="meta">Должность и день рождения. В день рождения придёт уведомление с поздравлением (на этом телефоне, когда откроете приложение).</p></div>
+    <div class="card"><p class="meta">Должность, день рождения, телефон и табельный номер. В день рождения придёт уведомление с поздравлением (на этом телефоне, когда откроете приложение).</p></div>
     ${staff.map(n => `<div class="card person-c"><div class="pc-top"><b>${esc(n)}</b><button type="button" class="del-x sm" data-pdel="${esc(n)}" aria-label="Удалить">${icon('trash')}</button></div>
       <div class="pc-row"><label class="field"><span class="lbl">Должность</span><select data-pos="${esc(n)}"><option value="">—</option>${[...new Set([...POSITIONS, staffPos(n)].filter(Boolean))].map(p => `<option ${p === staffPos(n) ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
       <label class="field"><span class="lbl">День рождения</span><input type="date" data-bd="${esc(n)}" value="${esc(bd[n] || '')}"></label></div>
+      <div class="pc-row"><label class="field"><span class="lbl">Телефон</span><input type="tel" data-phone="${esc(n)}" value="${esc(staffContacts()[n]?.phone||'')}"></label><label class="field"><span class="lbl">Табельный номер</span><input data-personnel="${esc(n)}" value="${esc(staffContacts()[n]?.personnel||'')}" autocomplete="off"></label></div>${staffContacts()[n]?.phone?`<a class="btn ghost small" href="tel:${esc(staffContacts()[n].phone.replace(/[^+\d]/g,''))}">Позвонить</a>`:''}
       ${bd[n] && daysToBday(bd[n]) === 0 ? '<p class="bday-today">🎉 Сегодня день рождения!</p>' : ''}</div>`).join('') || '<div class="card meta">Список пуст.</div>'}
     <button class="btn accent" id="pAdd">+ Добавить человека</button>`;
+  app.querySelectorAll('[data-phone],[data-personnel]').forEach(input=>input.oninput=()=>saveStaffContact(input.dataset.phone??input.dataset.personnel,input.dataset.phone!==undefined?'phone':'personnel',input.value.trim()));
   app.onchange = e => {
     const el = e.target;
+    if(el.dataset.phone!==undefined){saveStaffContact(el.dataset.phone,'phone',el.value.trim());toast('Телефон сохранён');}
+    if(el.dataset.personnel!==undefined){saveStaffContact(el.dataset.personnel,'personnel',el.value.trim());toast('Табельный номер сохранён');}
     if (el.dataset.pos !== undefined) { setStaffPos(el.dataset.pos, el.value); toast('Должность сохранена'); }
     if (el.dataset.bd !== undefined) { setBday(el.dataset.bd, el.value); toast('День рождения сохранён'); viewPeople(role); }
   };

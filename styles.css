@@ -1668,3 +1668,16 @@ main { padding-bottom: 190px; }
 .reading-link small { display: block; color: #65758a; font-size: 12px; line-height: 1.45; margin-top: 3px; }
 .reading-number { display: grid; place-items: center; height: 25px; width: 25px; border-radius: 8px; background: #dceeff; color: #135b99; font-size: 12px; font-weight: 700; }
 .reading-link:focus-visible { outline: 2px solid #1769aa; outline-offset: 3px; }
+
+/* Monthly assignment: horizontal scrolling belongs to the table, not page navigation. */
+.monthly-table-wrap{overflow:auto;overscroll-behavior-x:contain;max-height:72vh;border:1px solid var(--line,#dce3e7);border-radius:12px;background:var(--card,#fff)}
+.monthly-table{min-width:1750px;width:100%;border-collapse:separate;border-spacing:0;font-size:12px}
+.monthly-table th,.monthly-table td{padding:8px;border-right:1px solid #dce3e7;border-bottom:1px solid #dce3e7;vertical-align:top}
+.monthly-table thead{position:sticky;top:0;z-index:2;background:#edf3f5;color:#173442}
+.monthly-table input,.monthly-table textarea{width:100%;min-width:72px;padding:7px;font:inherit;border:1px solid #bdcbd2;border-radius:6px;background:var(--card,#fff);color:inherit}
+.monthly-table textarea{min-height:95px;min-width:190px;resize:vertical}
+.monthly-table td:nth-child(1) input{min-width:40px;width:50px}.monthly-table td:nth-child(5) input{width:80px}
+.monthly-table td:nth-child(6),.monthly-table td:nth-child(9){background:#fff6cd}.monthly-table td:nth-child(8),.monthly-table td:nth-child(10),.monthly-table td:nth-child(11){background:#e9f4eb;color:#17412b;font-variant-numeric:tabular-nums}
+.monthly-additional{background:#f0f6ed}.monthly-summary{display:grid;gap:8px}.monthly-summary b{font-variant-numeric:tabular-nums;float:right;margin-left:12px}
+.monthly-table [aria-invalid=true]{border:2px solid #ba342a}.task-location{margin:14px 0;padding:12px;background:var(--bg,#f3f6f8);border-radius:10px}
+.guide-slide{min-height:210px}.guide-flow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:18px 0}.guide-flow span{border:1px solid #93b2bf;border-radius:10px;padding:14px;background:#edf5f7;color:#173442}.guide-progress{font-variant-numeric:tabular-nums}.guide-sections{display:grid;gap:10px}

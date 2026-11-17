@@ -1,11 +1,15 @@
 'use strict';
 
-const APP_RELEASE = 'psgi-2026-11-16-v21';
+const APP_RELEASE = 'psgi-2026-11-17-v22';
 const RELEASE_NOTES = [
-  'Счётчик электромонтёра раскрыт в точный список документов и тестов; отметка ознакомления убирает выполненный пункт.',
-  'Изменить заявку — рядом с урной в меню смахивания влево, в списке и внутри заявки.',
-  'Кнопки регистрации номера и действий заявки уменьшены до общей высоты 40 пикселей.',
-  'Редактирование и удаление доступны начальнику и исполнителям своей заявки.'
+  'В разделах добавлено «Нормированное задание по месяцам».',
+  'Редактирование объёмов, норм и коэффициентов 0,91–0,97, сохранение на устройстве и пересчёт всех строк.',
+  'Выгрузка в Excel с формулами, загрузка/резервная копия задания и перенос плана на другой месяц.',
+  'Полный реестр приборов по фотографиям и ещё 15 руководств PDF с ознакомлением.',
+  'Автосохранение незавершённой заявки, доступ ответственного руководителя, телефоны и табельные номера.',
+  'Общая геопривязка заявки и создание нового куста, исправление кнопки «Моё место».',
+  'ОПН: заводские номера по фазам; нормы строго по пунктам; наглядные инструкции.',
+  '20 новых технических рацпредложений; прежние планы сохранены в архиве.'
 ];
 const UNITS_TO_MOHM = { 'кОм': .001, 'МОм': 1, 'ГОм': 1000 };
 function resistanceCanonical(value, unit) {
@@ -125,7 +129,7 @@ const saveRegister = entries => lsSet('psgiRegisters', JSON.stringify(entries));
 const registerEntries = () => jget('psgiRegisters', []);
 const byNewest = (a, b) => (b.updated || b.created || 0) - (a.updated || a.created || 0);
 function roleTiles(role) {
-  const items = [['ideas', 'bolt', 'Рационализаторские предложения'], ['chat', 'people', 'Внутренний чат'], ['assets', 'meter', 'Оборудование'], ['kusty', 'rig', 'Кусты'], ['map', 'pin', 'Карта оборудования'], ['devices', 'meter', 'Приборы и паспорта'], ['training', 'book', 'Обучение'], ['cars', 'pin', 'Машины'], ['backup', 'gear', 'Данные и копии'], ['releases', 'info', 'Что нового']];
+  const items = [['guides', 'book', 'Наглядные инструкции'], ['monthly', 'clipboard', 'Нормированное задание по месяцам'], ['ideas', 'bolt', 'Рационализаторские предложения'], ['chat', 'people', 'Внутренний чат'], ['assets', 'meter', 'Оборудование'], ['kusty', 'rig', 'Кусты'], ['map', 'pin', 'Карта оборудования'], ['devices', 'meter', 'Приборы и паспорта'], ['training', 'book', 'Обучение'], ['cars', 'pin', 'Машины'], ['backup', 'gear', 'Данные и копии'], ['releases', 'info', 'Что нового']];
   if (isManager(role)) items.unshift(['registers', 'permit', 'СИЗ и журналы']);
   return `<div class="tiles">${items.map(([path, ic, title]) => tile(`#/${role}/${path}`, ic, title)).join('')}</div>`;
 }
@@ -246,7 +250,7 @@ function viewCars(role) {
   app.querySelectorAll('[data-cardel]').forEach(b => b.onclick = () => { if (confirm('Удалить машину из списка?')) { lsSet('psgiCars', JSON.stringify(cars.filter(c => c.id !== b.dataset.cardel))); viewCars(role); } });
 }
 
-const BACKUP_KEYS = ['staff', 'staffPos', 'staffBday', 'devices', 'objBook', 'objHidden', 'grObjects', 'panels', 'kusty', 'reglament', 'phonebook', 'blank', 'quizRes', 'quizAns', 'gameScores', 'psgiRegisters', 'psgiTraining', 'psgiCars', 'psgiManualAcks', 'psgiManualOpened', 'psgiIdeaPlans', 'devPresetV'];
+const BACKUP_KEYS = ['staff', 'staffPos', 'staffBday', 'staffContact', 'devices', 'objBook', 'objHidden', 'grObjects', 'panels', 'kusty', 'reglament', 'phonebook', 'blank', 'quizRes', 'quizAns', 'gameScores', 'psgiRegisters', 'psgiTraining', 'psgiCars', 'psgiManualAcks', 'psgiManualOpened', 'psgiIdeaPlans', 'devPresetV'];
 const MANUALS = [
   { id: 'e6-24', match: /Е6-24|E6-24/i, name: 'Е6-24', file: 'manuals/e6-24.pdf', title: 'Руководство по эксплуатации, методика поверки и паспорт', source: 'https://supereyes.ru/img/instructions/manual_rdservis_e624.pdf', author: 'АО «НПФ «Радио-Сервис»', summary: 'Измерение сопротивления изоляции обесточенных цепей и контроль переменного напряжения. В PDF описаны выбор напряжения, измерения, безопасность и поверка. Функция измерения классификационного напряжения ОПН относится к Е6-24/2.' },
   { id: 'ptf-1', match: /ПТФ-1/i, name: 'ПТФ-1', file: 'manuals/ptf-1.pdf', title: 'Руководство по эксплуатации', source: 'https://pribor-energy.ru/uploads/documents/rukovodstvo-po-ekspluatacii-ptf-1-9383.pdf', author: 'Документ изготовителя, открытая копия «Прибор-Энерго»', summary: 'Измерение активного сопротивления цепей с индуктивностью, в том числе обмоток электрических машин и трансформаторов. Руководство содержит подготовку, порядок измерений и требования безопасности. Редакцию и исполнение сверить с вашим прибором.' },
@@ -260,7 +264,7 @@ const manualAcks = () => jget('psgiManualAcks', {});
 function manualCardHTML(manual, role) {
   const key = manual.id + ':2026-11-15', acks = manualAcks()[key] || [];
   const opened = jget('psgiManualOpened', {})[key + ':' + me()];
-  return `<div class="card manual-card"><p class="meta">${esc(manual.author)}</p><h3>${esc(manual.name)}</h3><p>${esc(manual.title)}</p><p class="manual-summary">${esc(manual.summary)}</p><p class="hint">Проверено 15.11.2026. Паспорта конкретных экземпляров и свидетельства о поверке прикрепляйте в карточке прибора.</p><div class="manual-actions">${manual.file ? `<button class="btn accent small" data-manual-open="${manual.id}">Читать PDF</button><a class="btn ghost small" href="${manual.file}" download>Скачать PDF</a>` : ''}<a class="btn ghost small" href="${esc(manual.source)}" target="_blank" rel="noopener">Источник документа</a>${manual.file ? `<button class="btn ghost small" data-manual-ack="${manual.id}" ${!me() || !opened || acks.some(a => a.name === me()) ? 'disabled' : ''}>${acks.some(a => a.name === me()) ? 'Ознакомлен ' + fmtDT(acks.find(a => a.name === me()).at) : 'Ознакомлен с руководством'}</button>${!me() ? '<p class="hint">Для отметки выбери сотрудника вверху экрана.</p>' : !opened ? '<p class="hint">Сначала открой PDF, затем отметь ознакомление.</p>' : ''}` : ''}</div>${isManager(role) ? `<details class="mt"><summary>Кто ознакомился (${acks.length})</summary><ul class="manual-read-list">${acks.map(a => `<li>${esc(a.name)} — ${fmtDT(a.at)}</li>`).join('') || '<li>Отметок пока нет.</li>'}</ul><p class="hint">Ещё нет отметки: ${esc(getStaff().filter(n => !acks.some(a => a.name === n)).join(', ') || 'все ознакомились')}</p></details>` : ''}</div>`;
+  return `<div class="card manual-card"><p class="meta">${esc(manual.author)}</p><h3>${esc(manual.name)}</h3><p>${esc(manual.title)}</p><p class="manual-summary">${esc(manual.summary)}</p><p class="hint">Проверено ${esc(manual.checked || "15.11.2026")}. Паспорта конкретных экземпляров и свидетельства о поверке прикрепляйте в карточке прибора.</p><div class="manual-actions">${manual.file ? `<button class="btn accent small" data-manual-open="${manual.id}">Читать PDF</button><a class="btn ghost small" href="${manual.file}" download>Скачать PDF</a>` : ''}<a class="btn ghost small" href="${esc(manual.source)}" target="_blank" rel="noopener">Источник документа</a>${manual.file ? `<button class="btn ghost small" data-manual-ack="${manual.id}" ${!me() || !opened || acks.some(a => a.name === me()) ? 'disabled' : ''}>${acks.some(a => a.name === me()) ? 'Ознакомлен ' + fmtDT(acks.find(a => a.name === me()).at) : 'Ознакомлен с руководством'}</button>${!me() ? '<p class="hint">Для отметки выбери сотрудника вверху экрана.</p>' : !opened ? '<p class="hint">Сначала открой PDF, затем отметь ознакомление.</p>' : ''}` : ''}</div>${isManager(role) ? `<details class="mt"><summary>Кто ознакомился (${acks.length})</summary><ul class="manual-read-list">${acks.map(a => `<li>${esc(a.name)} — ${fmtDT(a.at)}</li>`).join('') || '<li>Отметок пока нет.</li>'}</ul><p class="hint">Ещё нет отметки: ${esc(getStaff().filter(n => !acks.some(a => a.name === n)).join(', ') || 'все ознакомились')}</p></details>` : ''}</div>`;
 }
 function bindManualActions(role) {
   app.querySelectorAll('[data-manual-open]').forEach(button => button.onclick = () => {
@@ -336,7 +340,7 @@ function viewBackup(role) {
 
 function viewReleases(role) {
   header('Что нового в ПСГИ', `/${role}/more`);
-  app.innerHTML = `<div class="card"><span class="badge st-sent">Обновление от 16.11.2026</span><h2>ПСГИ · версия 21</h2><ul>${RELEASE_NOTES.map(n => `<li>${esc(n)}</li>`).join('')}</ul><p class="meta">Передача данных между разными устройствами и подключение СКРТ требуют отдельной настройки сервера и доступа.</p></div>`;
+  app.innerHTML = `<div class="card"><span class="badge st-sent">Обновление от 17.11.2026</span><h2>ПСГИ · версия 22</h2><ul>${RELEASE_NOTES.map(n => `<li>${esc(n)}</li>`).join('')}</ul><p class="meta">Передача данных между разными устройствами и подключение СКРТ требуют отдельной настройки сервера и доступа.</p></div>`;
   lsSet('psgiSeenRelease', APP_RELEASE);
 }
 
@@ -451,7 +455,7 @@ async function enhancePage(role, parts) {
   if (parts.length === 0) {
     const note = $('.home-note'); if (note) note.textContent = 'Данные сохраняются на этом устройстве. Перенос и резервные копии — в разделе «Данные». Вход по ролям пока без авторизации.';
     if (lsGet('psgiSeenRelease') !== APP_RELEASE) {
-      const banner = document.createElement('div'); banner.className = 'card release-card'; banner.innerHTML = `<h3>Приложение обновилось: ПСГИ · 21</h3><p class="meta">Понятный список документов и тестов, компактные кнопки и изменение заявки смахиванием.</p><a class="btn ghost small mt" href="#/${role}/releases">Что изменилось</a><button class="btn link small" data-release-seen>Понятно</button>`;
+      const banner = document.createElement('div'); banner.className = 'card release-card'; banner.innerHTML = `<h3>Приложение обновилось: ПСГИ · 22</h3><p class="meta">Нормированное задание по месяцам: таблица, сохранение и Excel с формулами.</p><a class="btn ghost small mt" href="#/${role}/releases">Что изменилось</a><button class="btn link small" data-release-seen>Понятно</button>`;
       app.prepend(banner); banner.querySelector('[data-release-seen]').onclick = () => { lsSet('psgiSeenRelease', APP_RELEASE); banner.remove(); };
     }
     const reset = $('#reset'); if (reset) reset.remove();

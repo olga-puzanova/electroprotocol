@@ -80,6 +80,9 @@ function normalize(t) {
     t.crew = { respExec: '', respHead: '', foreman: '', members: t.executors || (t.executor ? [t.executor] : []) };
     delete t.executor; delete t.executors;
   }
+  if(!t.location){const v=t.items.find(item=>Number.isFinite(Number(item.values?.latitude))&&Number.isFinite(Number(item.values?.longitude))&&item.values?.latitude!==''&&item.values?.longitude!==''&&item.values?.latitude!=null&&item.values?.longitude!=null)?.values;if(v)t.location={latitude:+v.latitude,longitude:+v.longitude,accuracy:null,at:null};}
+  if(!t.siteId)t.siteId=t.items.find(item=>item.values?.kust_id)?.values.kust_id||'';
+  t.items.forEach(item=>{item.values ||= {};if(t.location&&!item.values.latitude&&!item.values.longitude){item.values.latitude=String(t.location.latitude);item.values.longitude=String(t.location.longitude);}if(t.siteId&&!item.values.kust_id)item.values.kust_id=t.siteId;});
   t.items.forEach((item, index) => { item.id ||= t.id + '-item-' + index; for (const key of Object.keys(item.values?._units || {})) if (item.values._units[key] === 'ГОм') item.values._units[key] = 'МОм'; });
   t.briefing = t.briefing || { checked: [] };
   return t;
@@ -268,11 +271,12 @@ function normsHTML(wt, sec, v) {
   const showP = !isRD(v), showR = isRD(v);
   const blocks = [
     pue && showP ? `<h4>ПУЭ п. ${wt.code}, пункт ${sec.ref} — приёмо-сдаточные</h4>${paras(pue)}` : '',
-    rd && showR ? `<h4>РД 34.45-51.300-97, п. ${rd.n} — в эксплуатации</h4>${paras(rd.t)}` : ''
+    rd && showR ? `<h4>РД 34.45-51.300-97, п. ${rd.n} — в эксплуатации</h4>${paras(wt.code==='1.8.16'&&sec.ref===3?rd.t+'\n'+(N.rd[7]?.t||''):rd.t)}` : ''
   ].filter(Boolean);
   if (!blocks.length) return v.mode === 'M' ? '<p class="hint">В РД этого пункта нет.</p>' : '';
+  const rdText=rd&&wt.code==='1.8.16'&&sec.ref===3?rd.t+'\n'+(N.rd[7]?.t||''):rd?.t||'';
   const name = showR ? 'Нормы РД' : 'Нормы ПУЭ';
-  return `<details class="norms"><summary>📖 ${name}</summary>${blocks.join('')}${showR?normReferencesHTML(wt, rd?.t || ''):''}</details>`;
+  return `<details class="norms"><summary>📖 ${name}</summary>${blocks.join('')}${showR?normReferencesHTML(wt, rdText, sec):''}</details>`;
 }
 function sectionInner(sec, v, ro, wt, noTitle) {
   return `${noTitle ? '' : `<h3>${esc(sec.title)}</h3>`}${sec.note && !ro ? `<p class="note">${esc(sec.note)}</p>` : ''}
@@ -486,11 +490,8 @@ async function weatherJSON(url, timeout=WEATHER_TIMEOUT) {
 }
 const validWeatherLocation=c=>c&&Number.isFinite(c.latitude)&&Number.isFinite(c.longitude)&&Math.abs(c.latitude)<=90&&Math.abs(c.longitude)<=180;
 async function weatherPosition() {
-  let timer;
-  try {return await Promise.race([
-    new Promise((resolve,reject)=>{if(!navigator.geolocation)return reject(new Error('Геолокация недоступна. Выбери город.'));navigator.geolocation.getCurrentPosition(p=>resolve(p.coords),()=>reject(new Error('Место не определено. Разреши геолокацию или выбери город.')),{timeout:6000,maximumAge:3600000,enableHighAccuracy:false});}),
-    new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Телефон не определил место за 6 секунд. Выбери город.')),6000);})
-  ]);}finally{clearTimeout(timer);}
+  const coords=await getPos();
+  return {latitude:coords.latitude,longitude:coords.longitude,accuracy:coords.accuracy,place:coords.latitude.toFixed(3)+', '+coords.longitude.toFixed(3),city:''};
 }
 async function homeWeather(mode) {
   const old=jget('homeW',null),saved=jget('weatherLocation',null);
@@ -560,7 +561,7 @@ function viewRoles() {
   const weatherBox=$('#homeW');let weatherPaint=0;
   const paintWeather=async mode=>{
     const sequence=++weatherPaint;
-    weatherBox.innerHTML=weatherHTML(jget('homeW',null),mode==='locate'?'Определяем место…':mode==='city'?'Выбор города…':'Обновляем погоду…');
+    weatherBox.innerHTML=weatherHTML(jget('homeW',null),mode==='locate'?'Определяем место телефона, до 25 секунд…':mode==='city'?'Выбор города…':'Обновляем погоду…');
     try{const w=await homeWeather(mode);if(weatherBox.isConnected&&sequence===weatherPaint)weatherBox.innerHTML=weatherHTML(w,!isOnline()?'Нет интернета. Последние сохранённые данные.':mode&&w?'Погода обновлена.':'');}
     catch(error){if(weatherBox.isConnected&&sequence===weatherPaint)weatherBox.innerHTML=weatherHTML(jget('homeW',null),error.message);}
   };
@@ -698,7 +699,7 @@ async function viewTask(id, tab, k) {
   header(`Заявка ${t.number}`, '/e');
   const tabs = [['brief', '1. Инструктаж'], ['steps', '2. Инструкция'], ['form', '3. Протоколы']];
   app.innerHTML = `
-    <div class="card">
+    <div class="card task-summary">
       <div class="top-line"><span>${fmtDate(t.date)}</span><span class="badge ${sc}">${sl}</span></div>
       <div class="obj">${esc(t.object)}</div>
       <p class="meta">${t.address ? esc(t.address) + '<br>' : ''}${permitHTML(t)}${t.equipment ? 'Оборудование: <b>' + esc(t.equipment) + '</b><br>' : ''}${crewHTML(t)}${t.comment ? '<br>' + esc(t.comment) : ''}</p>
@@ -1122,7 +1123,8 @@ const autoWeatherDone = new Set();
 const GEO_ERR = { 1: 'сайту запрещён доступ к местоположению (разрешите в браузере: значок замка у адреса → Местоположение)', 2: 'телефон не смог определить место', 3: 'телефон долго определял место' };
 const getPos = () => new Promise((res, rej) => {
   if (!navigator.geolocation) return rej(new Error('нет геолокации'));
-  navigator.geolocation.getCurrentPosition(p => res(p.coords), e => rej(new Error(GEO_ERR[e.code] || 'место не определено')), { timeout: 15000, maximumAge: 3600000, enableHighAccuracy: false });
+  const timer=setTimeout(()=>rej(new Error(GEO_ERR[3]+'. Проверь геолокацию телефона и разрешение Chrome.')),26000);
+  navigator.geolocation.getCurrentPosition(p => {clearTimeout(timer);res(p.coords);}, e => {clearTimeout(timer);rej(new Error(GEO_ERR[e.code] || 'место не определено'));}, { timeout: 25000, maximumAge: 300000, enableHighAccuracy: false });
 });
 // Своё окошко для ввода города (системное окно на некоторых телефонах не появляется)
 // Своё окошко ввода текста: вернёт строку или null (Отмена)
@@ -1161,12 +1163,13 @@ async function fetchWeather(quiet) {
 
 // ---------- Создание и изменение заявки (общее для обеих ролей) ----------
 async function viewEdit(role, id) {
+  const draftKey=editorDraftKey(role,id),editDraft=await docGet(draftKey);
   const old = id ? await dbGet(id) : null;
   if (id && !old) { location.hash = '/' + role; return; }
   const back = id ? `/${role}/task/${id}` : `/${role}`;
   header(id ? `Изменить ${old.number}` : 'Новая заявка', back);
-  const t = old || { date: new Date().toISOString().slice(0, 10), items: [{ type: '', values: {}, photos: [] }],
-    crew: { respHead: '', foreman: '', members: [''] } };
+  const base = old || { date: new Date().toISOString().slice(0, 10), items: [{ type: '', values: {}, photos: [] }], crew: { respHead: '', foreman: '', members: [''] } };
+  const t=editDraft?{...base,...editDraft.form,items:editDraft.items,crew:editDraft.crew,devices:editDraft.devices,devAuto:editDraft.devAuto,complex:editDraft.complex}:base;
   const items = t.items.map(i => structuredClone(i));
   const crew = { ...t.crew, members: [...(t.crew.members || [])] };
   if (!crew.members.length) crew.members.push('');
@@ -1180,6 +1183,8 @@ async function viewEdit(role, id) {
       `<option value="__new">+ Новый человек…</option>`;
   };
   app.innerHTML = `<form class="card" id="ef" novalidate>
+    <p class="hint" id="editorDraftStatus" role="status">${editDraft?'Черновик восстановлен. Продолжи заполнение.':'Изменения сохраняются автоматически, даже если заявка ещё не создана.'}</p>
+    <label class="field"><span class="lbl">Куст / подстанция</span><select name="siteId" id="editorSite">${taskSiteOptions(t.siteId)}</select></label><button type="button" class="btn ghost small" id="editorAddSite">+ Новый куст / подстанция</button>
     <input type="hidden" id="workComplex" value="${esc(t.complex || '')}">
     <span class="lbl">Испытания <b class="req">*</b></span>
     <div id="tests"></div>
@@ -1327,7 +1332,7 @@ async function viewEdit(role, id) {
     const saved = {
       ...(latest || old || { id: 't' + Date.now(), number: nextNo, created: Date.now(), status: 'new', briefing: { checked: [] } }),
       object: fd.object.trim(), address: fd.address.trim(), equipment: fd.equipment.trim(), date: fd.date, comment: fd.comment.trim(),
-      items: goodItems, crew, devices: [...devSel], devAuto
+      items: goodItems, crew, devices: [...devSel], devAuto, siteId: fd.siteId || ''
     };
     saved.complex = $('#workComplex').value;
     if (!old || JSON.stringify(crew) !== JSON.stringify(old.crew)) saved.assignedElectrician = crew.members[0] || crew.foreman || '';
@@ -1345,10 +1350,29 @@ async function viewEdit(role, id) {
     const book = objBook(); book[saved.object] = { address: saved.address, equipment: saved.equipment }; lsSet('objBook', JSON.stringify(book));
     addStaff(crewNames(saved));
     await dbPut(saved);
+    draftClosed=true;await draftSaving;await docDel(draftKey);
     toast(id ? 'Заявка сохранена' : 'Заявка создана');
     if (!id) notify(`Новая заявка ${saved.number}`, `${saved.object}${saved.date ? ', ' + fmtDate(saved.date) : ''}`, `/e/task/${saved.id}`);
     location.hash = id ? back : `/${role}`;
   };
+  let draftSaving=Promise.resolve(),draftClosed=false,lastDraft='';
+  const persistDraft=()=>{
+    if(draftClosed)return;
+    const form=$('#ef');if(!form)return;
+    const fields=Object.fromEntries(new FormData(form));
+    if(!items.some(item=>item.type)&&![fields.object,fields.address,fields.equipment,fields.comment].some(Boolean)&&!crew.members.some(Boolean)&&!crew.respHead&&!crew.foreman)return;
+    const snapshot={id:draftKey,role,owner:me()||'',taskId:id||null,form:fields,items:structuredClone(items),crew:structuredClone(crew),devices:[...devSel],devAuto,complex:$('#workComplex').value};
+    const serialized=JSON.stringify(snapshot);if(serialized===lastDraft)return;lastDraft=serialized;
+    const status=$('#editorDraftStatus');if(status)status.textContent='Сохраняем черновик…';
+    draftSaving=draftSaving.catch(()=>{}).then(()=>saveEditorDraft(snapshot));
+    draftSaving.then(()=>{if(status?.isConnected)status.textContent='Черновик сохранён · '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});}).catch(()=>{lastDraft='';if(status?.isConnected)status.textContent='Не удалось сохранить черновик. Проверь свободное место.';});
+  };
+  const editorForm=$('#ef');
+  editorForm.addEventListener('input',persistDraft);
+  editorForm.addEventListener('change',()=>queueMicrotask(persistDraft));
+  editorForm.addEventListener('click',()=>queueMicrotask(persistDraft));
+  $('#editorSite').onchange=()=>{const site=kusty().find(k=>k.id===$('#editorSite').value);if(site){editorForm.elements.object.value=site.name;editorForm.elements.address.value=site.field||editorForm.elements.address.value;}persistDraft();};
+  $('#editorAddSite').onclick=async()=>{const site=await createSite();if(site){$('#editorSite').innerHTML=taskSiteOptions(site.id);editorForm.elements.object.value=site.name;persistDraft();}};
 }
 
 // ---------- Техника безопасности (ПОТЭЭ) ----------
@@ -1631,7 +1655,7 @@ async function viewBossTask(id, kk) {
   const n = t.items.length, k = Math.min(Math.max(0, +kk || 0), Math.max(0, n - 1));
   header(`Заявка ${t.number}`, '/b');
   const [sl, sc] = bossStatus(t);
-  const info = `<div class="card">
+  const info = `<div class="card task-summary">
     <div class="top-line"><span>Заявка ${esc(t.number)} от ${fmtDate(t.date)}</span><span class="badge ${sc}">${sl}</span></div>
     <div class="obj">${esc(t.object)}</div>
     <p class="meta">${t.address ? 'Адрес: ' + esc(t.address) + '<br>' : ''}${permitHTML(t)}${t.equipment ? 'Оборудование: ' + esc(t.equipment) + '<br>' : ''}
@@ -1959,5 +1983,5 @@ async function startApp() {
   router();
   syncPending();
   checkBirthdays();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=21').catch(error => { console.error(error); toast('Автономная версия ещё не сохранена. Проверь сеть и обнови страницу.'); });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=22').catch(error => { console.error(error); toast('Автономная версия ещё не сохранена. Проверь сеть и обнови страницу.'); });
 }
