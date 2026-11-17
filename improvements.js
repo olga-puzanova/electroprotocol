@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_RELEASE = 'psgi-2026-11-17-v23';
+const APP_RELEASE = 'psgi-2026-11-17-v24';
 const RELEASE_NOTES = ['Ноябрьское нормированное задание автоматически доступно по фотографиям: 41 строка с объёмами, нормами и формулами. Загружать файл не нужно. Сохранённые задания не перезаписываются.'];
 const UNITS_TO_MOHM = { 'кОм': .001, 'МОм': 1, 'ГОм': 1000 };
 function resistanceCanonical(value, unit) {
@@ -446,7 +446,7 @@ async function enhancePage(role, parts) {
   if (parts.length === 0) {
     const note = $('.home-note'); if (note) note.textContent = 'Данные сохраняются на этом устройстве. Перенос и резервные копии — в разделе «Данные». Вход по ролям пока без авторизации.';
     if (lsGet('psgiSeenRelease') !== APP_RELEASE) {
-      const banner = document.createElement('div'); banner.className = 'card release-card'; banner.innerHTML = `<h3>Приложение обновилось: ПСГИ · 23</h3><p class="meta">Нормированное задание по месяцам: таблица, сохранение и Excel с формулами.</p><a class="btn ghost small mt" href="#/${role}/releases">Что изменилось</a><button class="btn link small" data-release-seen>Понятно</button>`;
+      const banner = document.createElement('div'); banner.className = 'card release-card'; banner.innerHTML = `<h3>Приложение обновилось: ПСГИ · 24</h3><p class="meta">Нормированное задание по месяцам: таблица, сохранение и Excel с формулами.</p><a class="btn ghost small mt" href="#/${role}/releases">Что изменилось</a><button class="btn link small" data-release-seen>Понятно</button>`;
       app.prepend(banner); banner.querySelector('[data-release-seen]').onclick = () => { lsSet('psgiSeenRelease', APP_RELEASE); banner.remove(); };
     }
     const reset = $('#reset'); if (reset) reset.remove();

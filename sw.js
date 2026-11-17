@@ -1,4 +1,4 @@
-const CACHE = 'psgi-v23';
+const CACHE = 'psgi-v24';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'norms.js', 'potee.js', 'extras.js', 'kusty.js', 'manifest.json', 'icon.svg', 'improvements.js', 'repairs.js', 'monthly.js','device-registry.js','field-work.js','engineering-ideas.js','visual-guides.js', 'pdf-export.js', 'ideas.js', 'chat.js', 'vendor/pdf-lib.min.js', 'vendor/fontkit.umd.min.js', 'vendor/NotoSans-Regular.ttf'];
 const MANUAL_FILES = ["manuals/aid-70c.pdf", "manuals/aim-90a.pdf", "manuals/aist-snch.pdf", "manuals/cmp-2000.pdf", "manuals/e6-24.pdf", "manuals/hva-60.pdf", "manuals/iks-30a.pdf", "manuals/kew-6016.pdf", "manuals/mic-5005.pdf", "manuals/miko-2-3.pdf", "manuals/mki-600.pdf", "manuals/mpi-530.pdf", "manuals/mrp-201.pdf", "manuals/mru-200.pdf", "manuals/ptf-1.pdf", "manuals/retom-30ka.pdf", "manuals/shin-20.pdf", "manuals/svs-100.pdf", "manuals/tangens-2000.pdf", "manuals/tc-3.pdf", "manuals/tl-160-plus.pdf"];
 const shellURLs = new Set(FILES.map(file=>new URL(file,self.registration.scope).href));
